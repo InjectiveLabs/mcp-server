@@ -1,0 +1,36 @@
+{
+  "name": "@injective-agent/core",
+  "version": "0.1.0",
+  "description": "AI agent library for trading perpetual futures on Injective",
+  "type": "module",
+  "exports": {
+    ".": "./dist/index.js",
+    "./mcp": "./dist/mcp/index.js"
+  },
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc --watch",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:integration": "vitest run --config vitest.integration.config.ts",
+    "mcp": "node dist/mcp/server.js",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@injectivelabs/networks": "^1.14.27",
+    "@injectivelabs/sdk-ts": "^1.14.27",
+    "@injectivelabs/utils": "^1.14.27",
+    "@modelcontextprotocol/sdk": "^1.0.4",
+    "decimal.js": "^10.4.3"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "typescript": "^5.7.0",
+    "vitest": "^2.1.0"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}
