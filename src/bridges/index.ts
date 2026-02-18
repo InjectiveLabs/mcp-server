@@ -17,6 +17,7 @@ import { Config } from '../config/index.js'
 import { wallets } from '../wallets/index.js'
 import { accounts } from '../accounts/index.js'
 import { createBroadcaster } from '../client/index.js'
+import { toBaseUnits } from '../utils/denom-math.js'
 import {
   BroadcastFailed,
   InsufficientBalance,
@@ -67,10 +68,6 @@ const DEFAULT_BRIDGE_FEE_FALLBACK = '0.001'
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
 
-function toBaseUnits(humanAmount: Decimal, decimals: number): string {
-  return humanAmount.mul(new Decimal(10).pow(decimals)).toFixed(0)
-}
-
 /**
  * Validate that a denom is bridgeable via Peggy.
  * Only INJ and peggy-prefixed tokens (which originated from Ethereum) can be withdrawn.
@@ -114,6 +111,8 @@ export const bridges = {
     if (fee.lt(0)) {
       throw new InvalidTransferAmount('Bridge fee cannot be negative')
     }
+    // Note: Zero fee is allowed — the chain may accept or reject it.
+    // A zero fee will likely cause very slow bridge processing.
 
     // 5. Total needed = amount + fee (both in same denom)
     const totalNeeded = amount.plus(fee)
@@ -125,7 +124,7 @@ export const bridges = {
     // 7. Best-effort balance check
     const balances = await accounts.getBalances(config, address)
     const bankBal = balances.bank.find(b => b.denom === denom)
-    if (bankBal && meta.decimals !== null) {
+    if (bankBal) {
       const available = new Decimal(bankBal.amount)
       if (available.lt(totalNeeded)) {
         throw new InsufficientBalance(

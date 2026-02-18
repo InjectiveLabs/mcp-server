@@ -15,6 +15,7 @@ import { Config } from '../config/index.js'
 import { wallets } from '../wallets/index.js'
 import { accounts } from '../accounts/index.js'
 import { createBroadcaster } from '../client/index.js'
+import { toBaseUnits } from '../utils/denom-math.js'
 import {
   BroadcastFailed,
   InsufficientBalance,
@@ -78,16 +79,6 @@ export interface SubaccountWithdrawResult {
   amount: string
 }
 
-// ─── Helpers ────────────────────────────────────────────────────────────────
-
-/**
- * Convert a human-readable amount to chain base units.
- * e.g. "1.5" with 18 decimals → "1500000000000000000"
- */
-function toBaseUnits(humanAmount: Decimal, decimals: number): string {
-  return humanAmount.mul(new Decimal(10).pow(decimals)).toFixed(0)
-}
-
 // ─── Public API ─────────────────────────────────────────────────────────────
 
 export const transfers = {
@@ -120,7 +111,7 @@ export const transfers = {
     // 5. Best-effort balance check (TOCTOU: balance can change between check and broadcast)
     const balances = await accounts.getBalances(config, address)
     const bankBal = balances.bank.find(b => b.denom === denom)
-    if (bankBal && meta.decimals !== null) {
+    if (bankBal) {
       const available = new Decimal(bankBal.amount)
       if (available.lt(amount)) {
         throw new InsufficientBalance(amountStr, bankBal.amount)

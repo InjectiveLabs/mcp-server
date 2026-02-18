@@ -129,6 +129,33 @@ describe('bridges.withdrawToEth', () => {
     ).rejects.toThrow('Insufficient balance')
   })
 
+  it('throws InvalidTransferAmount for negative bridge fee', async () => {
+    await expect(
+      bridges.withdrawToEth(config, {
+        address: 'inj1' + 'a'.repeat(38),
+        password: 'testpass123',
+        ethRecipient: '0x' + 'ab'.repeat(20),
+        denom: 'inj',
+        amount: '1',
+        bridgeFee: '-0.5',
+      })
+    ).rejects.toThrow('Bridge fee cannot be negative')
+  })
+
+  it('uses default fallback bridge fee for unknown peggy denom', async () => {
+    // peggy0xunknown passes denom validation (starts with "peggy") and
+    // the mock returns decimals: 6, so this should succeed with the fallback fee
+    const result = await bridges.withdrawToEth(config, {
+      address: 'inj1' + 'a'.repeat(38),
+      password: 'testpass123',
+      ethRecipient: '0x' + 'ab'.repeat(20),
+      denom: 'peggy0xunknown',
+      amount: '1',
+    })
+    // Fallback fee is '0.001' since peggy0xunknown is not in DEFAULT_BRIDGE_FEES
+    expect(result.bridgeFee).toBe('0.001')
+  })
+
   it('wraps broadcast errors in BroadcastFailed', async () => {
     mockBroadcast.mockRejectedValueOnce(new Error('peggy bridge temporarily unavailable'))
 
