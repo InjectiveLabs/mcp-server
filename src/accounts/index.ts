@@ -6,7 +6,8 @@ import { markets } from '../markets/index.js'
 export interface BankBalance {
   denom: string
   symbol: string
-  amount: string  // human-readable
+  amount: string      // human-readable if decimals known, raw string if not
+  decimals: number | null  // null when denom is unknown — amount is unscaled
 }
 
 export interface SubaccountBalance {
@@ -15,6 +16,7 @@ export interface SubaccountBalance {
   symbol: string
   total: string
   available: string
+  decimals: number | null  // null when denom is unknown — amounts are unscaled
 }
 
 export interface Position {
@@ -34,15 +36,55 @@ export interface Balances {
   subaccount: SubaccountBalance[]
 }
 
-const USDT_DENOM = 'peggy0xdAC17F958D2ee523a2206206994597C13D831ec7'
-const INJ_DENOM = 'inj'
-const USDT_DECIMALS = 6
-const INJ_DECIMALS = 18
+// ─── Known denom → symbol mapping ────────────────────────────────────────────
+// Exact match on the full denom string. The peggy USDT denom is a hex address
+// that does NOT contain the letters "usdt", so substring matching doesn't work.
+const KNOWN_SYMBOLS: Record<string, string> = {
+  'inj': 'INJ',
+  'peggy0xdAC17F958D2ee523a2206206994597C13D831ec7': 'USDT',  // mainnet
+  'peggy0x87aB3B4C8661e07D6372361211B96ed4Dc36B1B5': 'USDT',  // testnet
+}
 
+// ─── Known denom → decimals mapping ─────────────────────────────────────────
+// Returns null for unknown denoms — callers should return the raw amount string.
+const KNOWN_DECIMALS: Record<string, number> = {
+  'inj': 18,
+  'peggy0xdAC17F958D2ee523a2206206994597C13D831ec7': 6,  // mainnet USDT
+  'peggy0x87aB3B4C8661e07D6372361211B96ed4Dc36B1B5': 6,  // testnet USDT
+}
+
+/**
+ * Resolve a denom to a human-readable symbol.
+ *
+ * Priority:
+ *  1. Exact match in KNOWN_SYMBOLS (INJ, mainnet USDT, testnet USDT)
+ *  2. Pattern-based display name for known prefixes (peggy, factory, ibc, erc20)
+ *  3. Raw denom string as fallback
+ */
 function formatDenom(denom: string): string {
-  if (denom === INJ_DENOM) return 'INJ'
-  if (denom.toLowerCase().includes('usdt')) return 'USDT'
+  // 1. Exact match (covers INJ + both USDT variants)
+  const known = KNOWN_SYMBOLS[denom]
+  if (known) return known
+
+  // 2. Pattern-based display names
+  if (denom.startsWith('peggy0x')) return `peggy:${denom.slice(7, 13)}…`
+  if (denom.startsWith('factory/')) {
+    const parts = denom.split('/')
+    return parts[parts.length - 1] ?? denom
+  }
+  if (denom.startsWith('ibc/')) return `ibc:${denom.slice(4, 10)}…`
+  if (denom.startsWith('erc20:')) return `erc20:${denom.slice(6, 12)}…`
+
+  // 3. Fallback — return the raw denom
   return denom
+}
+
+/**
+ * Get the number of decimals for a denom, or null if unknown.
+ * When null, callers should return the raw (unscaled) amount string.
+ */
+function getDecimals(denom: string): number | null {
+  return KNOWN_DECIMALS[denom] ?? null
 }
 
 function safeDecimalStr(value: unknown, fallback = '0'): string {
@@ -62,25 +104,31 @@ export const accounts = {
       client.portfolioApi.fetchAccountPortfolioBalances(address)
     )
 
-    const bank: BankBalance[] = (portfolio.bankBalancesList ?? []).map(coin => ({
-      denom: coin.denom,
-      symbol: formatDenom(coin.denom),
-      amount: coin.denom === INJ_DENOM
-        ? toHuman(coin.amount, INJ_DECIMALS)
-        : toHuman(coin.amount, USDT_DECIMALS),
-    }))
+    const bank: BankBalance[] = (portfolio.bankBalancesList ?? []).map(coin => {
+      const decimals = getDecimals(coin.denom)
+      return {
+        denom: coin.denom,
+        symbol: formatDenom(coin.denom),
+        amount: decimals !== null ? toHuman(coin.amount, decimals) : coin.amount,
+        decimals,
+      }
+    })
 
-    const subaccount: SubaccountBalance[] = (portfolio.subaccountsList ?? []).map(sub => ({
-      subaccountId: sub.subaccountId,
-      denom: sub.denom,
-      symbol: formatDenom(sub.denom),
-      total: sub.denom === INJ_DENOM
-        ? toHuman(sub.deposit?.totalBalance ?? '0', INJ_DECIMALS)
-        : toHuman(sub.deposit?.totalBalance ?? '0', USDT_DECIMALS),
-      available: sub.denom === INJ_DENOM
-        ? toHuman(sub.deposit?.availableBalance ?? '0', INJ_DECIMALS)
-        : toHuman(sub.deposit?.availableBalance ?? '0', USDT_DECIMALS),
-    }))
+    const subaccount: SubaccountBalance[] = (portfolio.subaccountsList ?? []).map(sub => {
+      const decimals = getDecimals(sub.denom)
+      return {
+        subaccountId: sub.subaccountId,
+        denom: sub.denom,
+        symbol: formatDenom(sub.denom),
+        total: decimals !== null
+          ? toHuman(sub.deposit?.totalBalance ?? '0', decimals)
+          : (sub.deposit?.totalBalance ?? '0'),
+        available: decimals !== null
+          ? toHuman(sub.deposit?.availableBalance ?? '0', decimals)
+          : (sub.deposit?.availableBalance ?? '0'),
+        decimals,
+      }
+    })
 
     return { bank, subaccount }
   },
