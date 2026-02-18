@@ -69,3 +69,35 @@ export class BroadcastFailed extends Error {
     this.name = 'BroadcastFailed'
   }
 }
+
+export class InvalidTransferAmount extends Error {
+  readonly code = 'INVALID_TRANSFER_AMOUNT'
+  constructor(reason: string) {
+    super(`Invalid transfer amount: ${reason}`)
+    this.name = 'InvalidTransferAmount'
+  }
+}
+
+export class SelfTransferBlocked extends Error {
+  readonly code = 'SELF_TRANSFER_BLOCKED'
+  constructor() {
+    super('Cannot send tokens to yourself')
+    this.name = 'SelfTransferBlocked'
+  }
+}
+
+export class UnknownDecimals extends Error {
+  readonly code = 'UNKNOWN_DECIMALS'
+  constructor(denom: string) {
+    super(`Cannot convert amount for denom "${denom}" — decimals unknown. Use token_metadata to check.`)
+    this.name = 'UnknownDecimals'
+  }
+}
+
+export class InvalidBridgeDenom extends Error {
+  readonly code = 'INVALID_BRIDGE_DENOM'
+  constructor(denom: string) {
+    super(`Denom "${denom}" is not bridgeable via Peggy. Only INJ and peggy-prefixed tokens are supported.`)
+    this.name = 'InvalidBridgeDenom'
+  }
+}

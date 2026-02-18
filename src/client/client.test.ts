@@ -119,6 +119,7 @@ describe('createClient', () => {
     expect(client).toHaveProperty('oracleApi')
     expect(client).toHaveProperty('portfolioApi')
     expect(client).toHaveProperty('bankApi')
+    expect(client).toHaveProperty('peggyApi')
     expect(client).toHaveProperty('endpoints')
     expect(client).toHaveProperty('chainId')
     expect(client).toHaveProperty('network')
