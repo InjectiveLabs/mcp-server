@@ -32,10 +32,10 @@ export interface Position {
   subaccountId: string
   side: 'long' | 'short'
   quantity: string
-  entryPrice: string
-  markPrice: string
-  margin: string
-  pnl: string  // unrealized
+  entryPrice: string   // human-readable (e.g. "2.989")
+  markPrice: string    // human-readable
+  margin: string       // human-readable USDT
+  unrealizedPnl: string
 }
 
 export interface Balances {
@@ -260,8 +260,11 @@ export const accounts = {
       const market = allMarkets.find(m => m.marketId === pos.marketId)
       const symbol = market?.symbol ?? pos.marketId.slice(0, 8)
 
-      const entry = new Decimal(safeDecimalStr(pos.entryPrice))
-      const mark = new Decimal(safeDecimalStr(pos.markPrice))
+      // Chain values are scaled by 10^quoteDecimals — convert to human
+      const quoteScale = new Decimal(10).pow(6)
+      const entry = new Decimal(safeDecimalStr(pos.entryPrice)).div(quoteScale)
+      const mark = new Decimal(safeDecimalStr(pos.markPrice)).div(quoteScale)
+      const margin = new Decimal(safeDecimalStr(pos.margin)).div(quoteScale)
       const qty = new Decimal(safeDecimalStr(pos.quantity))
       const isLong = pos.direction === 'long'
       const direction = isLong ? 1 : -1
@@ -275,10 +278,10 @@ export const accounts = {
         subaccountId: pos.subaccountId,
         side: isLong ? 'long' : 'short',
         quantity: pos.quantity,
-        entryPrice: pos.entryPrice,
-        markPrice: pos.markPrice,
-        margin: pos.margin,
-        pnl: pnl.toFixed(6),
+        entryPrice: entry.toFixed(6),
+        markPrice: mark.toFixed(6),
+        margin: margin.toFixed(6),
+        unrealizedPnl: pnl.toFixed(6),
       } satisfies Position
     })
   },

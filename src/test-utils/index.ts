@@ -97,7 +97,7 @@ export function mockPosition(overrides: Partial<Position> = {}): Position {
     entryPrice: '30000',
     markPrice: '30500',
     margin: '30',
-    pnl: '5.000000',
+    unrealizedPnl: '5.000000',
     ...overrides,
   }
 }

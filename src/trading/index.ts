@@ -60,9 +60,21 @@ const DEFAULT_OPEN_SLIPPAGE = 0.01
 const DEFAULT_CLOSE_SLIPPAGE = 0.05
 const USDT_DECIMALS = 6
 
-/** Scale a human price to chain units using the market's tick size. */
+const QUOTE_SCALE = new Decimal(10).pow(USDT_DECIMALS)
+
+/** Convert an orderbook price from chain units to human-readable units. */
+function fromChainPrice(chainPrice: Decimal): Decimal {
+  return chainPrice.div(QUOTE_SCALE)
+}
+
+/** Scale a human price to chain units using the market's tick size.
+ *  The tick size from the API is already in chain units (e.g. 1000 = 0.001 USDT).
+ *  We must first scale the human price to chain units (× 10^quoteDecimals),
+ *  then quantize to the tick size.
+ */
 function toChainPrice(humanPrice: Decimal, tickSize: Decimal): string {
-  const quantized = quantize(humanPrice, tickSize)
+  const chainPrice = humanPrice.mul(QUOTE_SCALE)
+  const quantized = quantize(chainPrice, tickSize)
   return quantized.toFixed(0)
 }
 
@@ -115,10 +127,9 @@ export const trading = {
       throw new NoLiquidity(market.marketId)
     }
 
-    // Walk the opposite side of the book: for a buy (long), walk the asks (sells);
-    // for a sell (short), walk the bids (buys).
+    // Orderbook prices are in chain units — convert to human-readable
     const orderbookLevels = levels.map(l => ({
-      price: new Decimal(l.price),
+      price: fromChainPrice(new Decimal(l.price)),
       quantity: new Decimal(l.quantity),
     }))
 
@@ -227,8 +238,9 @@ export const trading = {
 
     if (levels.length === 0) throw new NoLiquidity(market.marketId)
 
+    // Orderbook prices are in chain units — convert to human-readable
     const orderbookLevels = levels.map(l => ({
-      price: new Decimal(l.price),
+      price: fromChainPrice(new Decimal(l.price)),
       quantity: new Decimal(l.quantity),
     }))
 
@@ -249,9 +261,8 @@ export const trading = {
 
     if (chainQty === '0') throw new QuantityTooSmall(market.minQuantityTick)
 
-    // Margin for close = 0 (reduce-only doesn't add margin)
-    // But market order on close needs a trigger margin amount — use current margin
-    const chainMargin = usdtToBase(new Decimal(position.margin))
+    // Reduce-only close order — no new margin posted
+    const chainMargin = '0'
 
     const pk = PrivateKey.fromHex(privateKeyHex)
     const subaccountId = pk.toAddress().getSubaccountId(0)
