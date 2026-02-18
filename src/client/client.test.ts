@@ -120,6 +120,8 @@ describe('createClient', () => {
     expect(client).toHaveProperty('portfolioApi')
     expect(client).toHaveProperty('bankApi')
     expect(client).toHaveProperty('peggyApi')
+    expect(client).toHaveProperty('evmApi')
+    expect(client).toHaveProperty('txApi')
     expect(client).toHaveProperty('endpoints')
     expect(client).toHaveProperty('chainId')
     expect(client).toHaveProperty('network')

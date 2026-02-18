@@ -13,6 +13,7 @@ import { z } from 'zod'
 
 const injAddress = z.string().regex(/^inj1[a-z0-9]{38}$/, 'Must be a valid inj1... address (42 chars)')
 const numericString = z.string().regex(/^\d+(\.\d+)?$/, 'Must be a positive numeric string')
+const ethAddress = z.string().regex(/^0x[a-fA-F0-9]{40}$/, 'Must be a valid 0x... Ethereum address (42 chars)')
 
 describe('injAddress schema', () => {
   it('accepts valid inj1 address', () => {
@@ -278,5 +279,122 @@ describe('wallet_generate parameter validation', () => {
 
   it('rejects empty password', () => {
     expect(schema.safeParse({ password: '' }).success).toBe(false)
+  })
+})
+
+describe('bridge_debridge_quote parameter validation', () => {
+  const schema = z.object({
+    srcDenom: z.string().min(1),
+    amount: numericString,
+    dstChain: z.union([z.string(), z.number().int().positive()]),
+    dstTokenAddress: z.string().min(1),
+    recipient: z.string().min(1),
+  })
+
+  it('accepts valid quote params with named chain', () => {
+    const result = schema.safeParse({
+      srcDenom: 'inj',
+      amount: '1.5',
+      dstChain: 'ethereum',
+      dstTokenAddress: '0x' + 'a'.repeat(40),
+      recipient: '0x' + 'b'.repeat(40),
+    })
+    expect(result.success).toBe(true)
+  })
+
+  it('accepts valid quote params with numeric chain id', () => {
+    const result = schema.safeParse({
+      srcDenom: 'erc20:0x' + 'a'.repeat(40),
+      amount: '100',
+      dstChain: 8453,
+      dstTokenAddress: '0x' + 'b'.repeat(40),
+      recipient: '0x' + 'c'.repeat(40),
+    })
+    expect(result.success).toBe(true)
+  })
+
+  it('rejects negative amount', () => {
+    const result = schema.safeParse({
+      srcDenom: 'inj',
+      amount: '-1',
+      dstChain: 'ethereum',
+      dstTokenAddress: '0x' + 'a'.repeat(40),
+      recipient: '0x' + 'b'.repeat(40),
+    })
+    expect(result.success).toBe(false)
+  })
+
+  it('rejects invalid numeric chain id', () => {
+    const result = schema.safeParse({
+      srcDenom: 'inj',
+      amount: '1',
+      dstChain: 0,
+      dstTokenAddress: '0x' + 'a'.repeat(40),
+      recipient: '0x' + 'b'.repeat(40),
+    })
+    expect(result.success).toBe(false)
+  })
+})
+
+describe('evm_broadcast parameter validation', () => {
+  const schema = z.object({
+    address: injAddress,
+    password: z.string(),
+    to: ethAddress.optional(),
+    data: z.string().optional(),
+    value: numericString.optional(),
+    nonce: z.number().int().min(0).optional(),
+    gasLimit: z.union([z.number().int().positive(), numericString]).optional(),
+    gasPrice: numericString.optional(),
+    chainId: z.number().int().positive().optional(),
+    memo: z.string().optional(),
+  })
+
+  it('accepts valid params with destination address', () => {
+    const result = schema.safeParse({
+      address: 'inj1' + 'a'.repeat(38),
+      password: 'pw',
+      to: '0x' + 'b'.repeat(40),
+      data: '0x1234',
+      value: '0',
+    })
+    expect(result.success).toBe(true)
+  })
+
+  it('accepts valid params without destination address (contract deploy)', () => {
+    const result = schema.safeParse({
+      address: 'inj1' + 'a'.repeat(38),
+      password: 'pw',
+      data: '0x60006000',
+      gasLimit: 500000,
+    })
+    expect(result.success).toBe(true)
+  })
+
+  it('rejects invalid ethereum destination address', () => {
+    const result = schema.safeParse({
+      address: 'inj1' + 'a'.repeat(38),
+      password: 'pw',
+      to: '0x123',
+    })
+    expect(result.success).toBe(false)
+  })
+
+  it('rejects negative nonce', () => {
+    const result = schema.safeParse({
+      address: 'inj1' + 'a'.repeat(38),
+      password: 'pw',
+      nonce: -1,
+    })
+    expect(result.success).toBe(false)
+  })
+
+  it('rejects invalid gasLimit numeric string', () => {
+    const result = schema.safeParse({
+      address: 'inj1' + 'a'.repeat(38),
+      password: 'pw',
+      gasLimit: '-100',
+    })
+    expect(result.success).toBe(false)
   })
 })

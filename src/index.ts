@@ -24,5 +24,10 @@ export type { SendParams, SendResult, SubaccountDepositParams, SubaccountDeposit
 
 export { bridges } from './bridges/index.js'
 export type { PeggyWithdrawParams, PeggyWithdrawResult } from './bridges/index.js'
+export { debridge } from './bridges/debridge.js'
+export type { DeBridgeQuoteParams, DeBridgeQuoteResult, DeBridgeSendParams, DeBridgeSendResult } from './bridges/debridge.js'
+
+export { evm } from './evm/index.js'
+export type { EvmAccount, BroadcastEvmTxParams, BroadcastEvmTxResult } from './evm/index.js'
 
 export * from './errors/index.js'

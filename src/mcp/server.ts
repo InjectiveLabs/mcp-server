@@ -20,6 +20,8 @@ import { accounts } from '../accounts/index.js'
 import { trading } from '../trading/index.js'
 import { transfers } from '../transfers/index.js'
 import { bridges } from '../bridges/index.js'
+import { debridge } from '../bridges/debridge.js'
+import { evm } from '../evm/index.js'
 
 const injAddress = z.string().regex(/^inj1[a-z0-9]{38}$/, 'Must be a valid inj1... address (42 chars)')
 const numericString = z.string().regex(/^\d+(\.\d+)?$/, 'Must be a positive numeric string')
@@ -374,6 +376,124 @@ server.tool(
   async ({ address, password, ethRecipient, denom, amount, bridgeFee }) => {
     const result = await bridges.withdrawToEth(config, {
       address, password, ethRecipient, denom, amount, bridgeFee,
+    })
+    return {
+      content: [{
+        type: 'text',
+        text: JSON.stringify(result, null, 2),
+      }],
+    }
+  },
+)
+
+server.tool(
+  'bridge_debridge_quote',
+  'Get a deBridge DLN quote from Injective to another chain. ' +
+  'Read-only: no transaction is broadcast. Supports destination chains like ethereum, bsc, polygon, arbitrum, avalanche, base, optimism, solana.',
+  {
+    srcDenom: z.string().min(1).describe('Source denom on Injective, e.g. "inj" or "erc20:0x...".'),
+    amount: numericString.describe('Human-readable source amount, e.g. "1.5".'),
+    dstChain: z.union([z.string(), z.number().int().positive()])
+      .describe('Destination chain name or deBridge chain ID (e.g. "ethereum", "base", 1, 8453).'),
+    dstTokenAddress: z.string().min(1)
+      .describe('Destination token address/mint on destination chain.'),
+    recipient: z.string().min(1)
+      .describe('Recipient address on destination chain.'),
+  },
+  async ({ srcDenom, amount, dstChain, dstTokenAddress, recipient }) => {
+    const result = await debridge.getQuote(config, {
+      srcDenom,
+      amount,
+      dstChain,
+      dstTokenAddress,
+      recipient,
+    })
+    return {
+      content: [{
+        type: 'text',
+        text: JSON.stringify(result, null, 2),
+      }],
+    }
+  },
+)
+
+server.tool(
+  'bridge_debridge_send',
+  'Bridge tokens from Injective to another chain via deBridge DLN. ' +
+  'IMPORTANT: Real cross-chain transaction, irreversible once submitted. Confirm parameters first.',
+  {
+    address: injAddress.describe('Sender inj1... address (must be in local keystore).'),
+    password: z.string().describe('Keystore password to decrypt the private key.'),
+    srcDenom: z.string().min(1).describe('Source denom on Injective, e.g. "inj" or "erc20:0x...".'),
+    amount: numericString.describe('Human-readable amount to bridge.'),
+    dstChain: z.union([z.string(), z.number().int().positive()])
+      .describe('Destination chain name or deBridge chain ID.'),
+    dstTokenAddress: z.string().min(1).describe('Destination token address/mint on destination chain.'),
+    recipient: z.string().min(1).describe('Recipient address on destination chain.'),
+    dstAuthorityAddress: z.string().min(1).optional()
+      .describe('Optional destination authority address override. Default: recipient.'),
+    gasLimit: z.union([z.number().int().positive(), numericString]).optional()
+      .describe('Optional gas limit override for the EVM transaction.'),
+    gasPrice: numericString.optional()
+      .describe('Optional gas price override (wei). Default: current base fee.'),
+    memo: z.string().optional().describe('Optional transaction memo.'),
+  },
+  async ({ address, password, srcDenom, amount, dstChain, dstTokenAddress, recipient, dstAuthorityAddress, gasLimit, gasPrice, memo }) => {
+    const result = await debridge.sendBridge(config, {
+      address,
+      password,
+      srcDenom,
+      amount,
+      dstChain,
+      dstTokenAddress,
+      recipient,
+      dstAuthorityAddress,
+      gasLimit,
+      gasPrice,
+      memo,
+    })
+    return {
+      content: [{
+        type: 'text',
+        text: JSON.stringify(result, null, 2),
+      }],
+    }
+  },
+)
+
+// ─── Generic EVM Tool ──────────────────────────────────────────────────────
+
+server.tool(
+  'evm_broadcast',
+  'Broadcast a raw EVM transaction on Injective inEVM. ' +
+  'IMPORTANT: Real on-chain transaction with real funds. Confirm parameters first.',
+  {
+    address: injAddress.describe('Sender inj1... address (must be in local keystore).'),
+    password: z.string().describe('Keystore password to decrypt the private key.'),
+    to: ethAddress.optional().describe('Destination 0x... contract/account. Omit for contract deployment.'),
+    data: z.string().optional().describe('Hex calldata (0x-prefixed). Default: "0x".'),
+    value: numericString.optional().describe('Value in wei as integer string. Default: "0".'),
+    nonce: z.number().int().min(0).optional().describe('Optional nonce override. Default: next chain nonce.'),
+    gasLimit: z.union([z.number().int().positive(), numericString]).optional()
+      .describe('Optional gas limit override. Default: 300000.'),
+    gasPrice: numericString.optional()
+      .describe('Optional gas price in wei. Default: current base fee.'),
+    chainId: z.number().int().positive().optional()
+      .describe('Optional EVM chain ID override. Default: network chain config.'),
+    memo: z.string().optional().describe('Optional memo.'),
+  },
+  async ({ address, password, to, data, value, nonce, gasLimit, gasPrice, chainId, memo }) => {
+    const privateKeyHex = wallets.unlock(address, password)
+    const result = await evm.broadcastEvmTx(config, {
+      privateKeyHex,
+      to,
+      data,
+      value,
+      nonce,
+      gasLimit,
+      gasPrice,
+      chainId,
+      memo,
     })
     return {
       content: [{

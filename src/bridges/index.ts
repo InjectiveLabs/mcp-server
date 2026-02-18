@@ -7,7 +7,6 @@
  * NOT covered (out of scope):
  * - Peggy deposits (Ethereum → Injective) — requires Ethereum key management
  * - LayerZero OFT bridging — requires EVM tx research (Phase 5C)
- * - deBridge DLN bridging — requires EVM tx research (Phase 5D)
  *
  * Security: Private keys are decrypted, used to sign, then discarded.
  */
@@ -170,3 +169,11 @@ export const bridges = {
     }
   },
 }
+
+export { debridge } from './debridge.js'
+export type {
+  DeBridgeQuoteParams,
+  DeBridgeQuoteResult,
+  DeBridgeSendParams,
+  DeBridgeSendResult,
+} from './debridge.js'
