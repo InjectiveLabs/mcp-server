@@ -13,6 +13,9 @@ import {
   SelfTransferBlocked,
   UnknownDecimals,
   InvalidBridgeDenom,
+  EvmTxFailed,
+  DeBridgeApiError,
+  UnsupportedBridgeChain,
 } from './index.js'
 
 describe('error classes', () => {
@@ -102,6 +105,27 @@ describe('error classes', () => {
     expect(err.message).toContain('ibc/ABC')
   })
 
+  it('EvmTxFailed includes reason', () => {
+    const err = new EvmTxFailed('execution reverted')
+    expect(err.code).toBe('EVM_TX_FAILED')
+    expect(err.name).toBe('EvmTxFailed')
+    expect(err.message).toContain('execution reverted')
+  })
+
+  it('DeBridgeApiError includes reason', () => {
+    const err = new DeBridgeApiError('503 service unavailable')
+    expect(err.code).toBe('DEBRIDGE_API_ERROR')
+    expect(err.name).toBe('DeBridgeApiError')
+    expect(err.message).toContain('503')
+  })
+
+  it('UnsupportedBridgeChain includes chain', () => {
+    const err = new UnsupportedBridgeChain('moonbeam')
+    expect(err.code).toBe('UNSUPPORTED_BRIDGE_CHAIN')
+    expect(err.name).toBe('UnsupportedBridgeChain')
+    expect(err.message).toContain('moonbeam')
+  })
+
   it('all errors are instanceof Error', () => {
     const errors = [
       new WalletNotFound('x'),
@@ -117,6 +141,9 @@ describe('error classes', () => {
       new SelfTransferBlocked(),
       new UnknownDecimals('x'),
       new InvalidBridgeDenom('x'),
+      new EvmTxFailed('x'),
+      new DeBridgeApiError('x'),
+      new UnsupportedBridgeChain('x'),
     ]
     for (const err of errors) {
       expect(err).toBeInstanceOf(Error)

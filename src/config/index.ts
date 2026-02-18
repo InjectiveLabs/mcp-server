@@ -20,6 +20,13 @@ const NETWORK_MAP: Record<NetworkName, Network> = {
   testnet: Network.TestnetSentry,
 }
 
+// Injective EVM chain IDs from official network docs.
+// Mainnet: 1776, Testnet: 1439.
+const EVM_CHAIN_ID_MAP: Record<NetworkName, number> = {
+  mainnet: 1776,
+  testnet: 1439,
+}
+
 export function validateNetwork(value: string): NetworkName {
   if (!VALID_NETWORKS.has(value)) {
     throw new Error(`Invalid network "${value}" — must be "mainnet" or "testnet"`)
@@ -40,6 +47,6 @@ export function createConfig(network: NetworkName = 'testnet'): Config {
       rest: endpoints.rest,
     },
     chainId: chainInfo.chainId,
-    ethereumChainId: Number(chainInfo.evmChainId ?? 0),
+    ethereumChainId: EVM_CHAIN_ID_MAP[network],
   }
 }

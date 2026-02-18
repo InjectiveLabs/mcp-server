@@ -42,12 +42,14 @@ describe('createConfig', () => {
     const config = createConfig('testnet')
     expect(config.network).toBe('testnet')
     expect(config.chainId).toContain('injective')
+    expect(config.ethereumChainId).toBe(1439)
   })
 
   it('creates mainnet config', () => {
     const config = createConfig('mainnet')
     expect(config.network).toBe('mainnet')
     expect(config.chainId).toContain('injective')
+    expect(config.ethereumChainId).toBe(1776)
   })
 
   it('testnet and mainnet have different chain IDs', () => {
@@ -69,8 +71,10 @@ describe('createConfig', () => {
     }
   })
 
-  it('ethereumChainId is a non-negative number', () => {
-    const config = createConfig('testnet')
-    expect(config.ethereumChainId).toBeGreaterThanOrEqual(0)
+  it('uses documented Injective EVM chain IDs', () => {
+    const testnet = createConfig('testnet')
+    const mainnet = createConfig('mainnet')
+    expect(testnet.ethereumChainId).toBe(1439)
+    expect(mainnet.ethereumChainId).toBe(1776)
   })
 })

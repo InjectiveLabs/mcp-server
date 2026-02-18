@@ -101,3 +101,27 @@ export class InvalidBridgeDenom extends Error {
     this.name = 'InvalidBridgeDenom'
   }
 }
+
+export class EvmTxFailed extends Error {
+  readonly code = 'EVM_TX_FAILED'
+  constructor(reason: string) {
+    super(`EVM transaction failed: ${reason}`)
+    this.name = 'EvmTxFailed'
+  }
+}
+
+export class DeBridgeApiError extends Error {
+  readonly code = 'DEBRIDGE_API_ERROR'
+  constructor(reason: string) {
+    super(`deBridge API error: ${reason}`)
+    this.name = 'DeBridgeApiError'
+  }
+}
+
+export class UnsupportedBridgeChain extends Error {
+  readonly code = 'UNSUPPORTED_BRIDGE_CHAIN'
+  constructor(chain: string | number) {
+    super(`Unsupported bridge destination chain: ${String(chain)}`)
+    this.name = 'UnsupportedBridgeChain'
+  }
+}

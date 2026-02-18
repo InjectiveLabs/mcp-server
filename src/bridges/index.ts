@@ -1,13 +1,13 @@
 /**
- * Bridges module — cross-chain token bridging via Peggy (Ethereum ↔ Injective).
+ * Bridges module — cross-chain token bridging.
  *
  * Covers:
  * - Peggy withdrawals (Injective → Ethereum via MsgSendToEth)
+ * - deBridge DLN (Injective → any chain via EVM module) — see ./debridge.ts
  *
- * NOT covered (out of scope):
+ * NOT covered:
  * - Peggy deposits (Ethereum → Injective) — requires Ethereum key management
- * - LayerZero OFT bridging — requires EVM tx research (Phase 5C)
- * - deBridge DLN bridging — requires EVM tx research (Phase 5D)
+ * - LayerZero OFT bridging — deferred, zero OFTs deployed on Injective EVM
  *
  * Security: Private keys are decrypted, used to sign, then discarded.
  */
@@ -170,3 +170,11 @@ export const bridges = {
     }
   },
 }
+
+export { debridge } from './debridge.js'
+export type {
+  DeBridgeQuoteParams,
+  DeBridgeQuoteResult,
+  DeBridgeSendParams,
+  DeBridgeSendResult,
+} from './debridge.js'
