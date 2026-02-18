@@ -14,7 +14,8 @@ import { createClient } from '../client/index.js'
 import { EvmTxFailed } from '../errors/index.js'
 import { Any } from '@injectivelabs/core-proto-ts-v2/generated/google/protobuf/any_pb'
 import { MsgEthereumTx, ExtensionOptionsEthereumTx } from '@injectivelabs/core-proto-ts-v2/generated/injective/evm/v1/tx_pb'
-import { AuthInfo, TxBody, TxRaw } from '@injectivelabs/core-proto-ts-v2/generated/cosmos/tx/v1beta1/tx_pb'
+import { AuthInfo, Fee, TxBody, TxRaw } from '@injectivelabs/core-proto-ts-v2/generated/cosmos/tx/v1beta1/tx_pb'
+import { Coin } from '@injectivelabs/core-proto-ts-v2/generated/cosmos/base/v1beta1/coin_pb'
 
 const EVM_MSG_TYPE_URL = '/injective.evm.v1.MsgEthereumTx'
 const EVM_EXTENSION_TYPE_URL = '/injective.evm.v1.ExtensionOptionsEthereumTx'
@@ -102,7 +103,24 @@ function toSafeNonce(nonce: string): number {
   return parsed
 }
 
-function buildEvmTxRaw(rawEvmTx: Uint8Array, memo: string): TxRaw {
+/**
+ * Build the Cosmos TxRaw wrapper for an RLP-encoded signed EVM transaction.
+ *
+ * The Ethermint ante handler (`EthGasConsumeDecorator`) reads gas from the
+ * embedded EVM tx, but the Cosmos SDK transaction infrastructure requires
+ * a well-formed AuthInfo.Fee.  The canonical `MsgEthereumTx.BuildTx()` in
+ * Ethermint's Go code always sets:
+ *   - Fee.amount  = [Coin("inj", gasPrice * gasLimit)]
+ *   - Fee.gasLimit = gasLimit from the EVM tx
+ *   - signerInfos  = []          (EVM sig lives inside MsgEthereumTx.raw)
+ *   - signatures   = []          (same reason)
+ */
+function buildEvmTxRaw(
+  rawEvmTx: Uint8Array,
+  memo: string,
+  gasPrice: bigint,
+  gasLimit: bigint,
+): TxRaw {
   const msg = MsgEthereumTx.create({ raw: rawEvmTx })
   const msgAny = Any.create({
     typeUrl: EVM_MSG_TYPE_URL,
@@ -122,7 +140,14 @@ function buildEvmTxRaw(rawEvmTx: Uint8Array, memo: string): TxRaw {
     nonCriticalExtensionOptions: [],
   })
 
-  const authInfo = AuthInfo.create({ signerInfos: [] })
+  const feeAmount = (gasPrice * gasLimit).toString()
+  const fee = Fee.create({
+    gasLimit,
+    amount: [Coin.create({ denom: 'inj', amount: feeAmount })],
+    payer: '',
+    granter: '',
+  })
+  const authInfo = AuthInfo.create({ signerInfos: [], fee })
 
   return TxRaw.create({
     bodyBytes: TxBody.toBinary(body),
@@ -186,7 +211,7 @@ export async function broadcastEvmTx(
       chainId,
     })
 
-    const txRaw = buildEvmTxRaw(getBytes(signedTxHex), memo)
+    const txRaw = buildEvmTxRaw(getBytes(signedTxHex), memo, gasPrice, gasLimit)
     const response = await client.txApi.broadcast(txRaw, {
       txTimeout: params.txTimeout,
     })

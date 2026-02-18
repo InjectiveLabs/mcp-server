@@ -288,6 +288,83 @@ describe('debridge.sendBridge', () => {
   })
 })
 
+describe('debridge.sendBridge error paths', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    vi.stubGlobal('fetch', fetchMock)
+  })
+
+  afterAll(() => {
+    vi.unstubAllGlobals()
+  })
+
+  it('throws when wallet unlock fails (wrong password)', async () => {
+    fetchMock.mockResolvedValueOnce(new Response(JSON.stringify({
+      orderId: 'order-x',
+      tx: { to: '0x' + 'ab'.repeat(20), data: '0x1234', value: '0' },
+    }), { status: 200 }))
+    mocks.mockUnlock.mockImplementationOnce(() => { throw new Error('decryption failed') })
+
+    await expect(
+      sendBridge(config, {
+        address: 'inj1' + 'a'.repeat(38),
+        password: 'wrong',
+        srcDenom: 'inj',
+        amount: '1',
+        dstChain: 'ethereum',
+        dstTokenAddress: '0x' + 'aa'.repeat(20),
+        recipient: '0x' + 'bb'.repeat(20),
+      })
+    ).rejects.toThrow('decryption failed')
+  })
+
+  it('throws when evm broadcast fails', async () => {
+    fetchMock.mockResolvedValueOnce(new Response(JSON.stringify({
+      orderId: 'order-fail',
+      tx: { to: '0x' + 'ab'.repeat(20), data: '0x1234', value: '0' },
+    }), { status: 200 }))
+    mocks.mockBroadcastEvmTx.mockRejectedValueOnce(new Error('execution reverted'))
+
+    await expect(
+      sendBridge(config, {
+        address: 'inj1' + 'a'.repeat(38),
+        password: 'pass',
+        srcDenom: 'inj',
+        amount: '1',
+        dstChain: 'ethereum',
+        dstTokenAddress: '0x' + 'aa'.repeat(20),
+        recipient: '0x' + 'bb'.repeat(20),
+      })
+    ).rejects.toThrow('execution reverted')
+  })
+
+  it('throws for unsupported source denom', async () => {
+    await expect(
+      getQuote(config, {
+        srcDenom: 'peggy0xabc',
+        amount: '1',
+        dstChain: 'ethereum',
+        dstTokenAddress: '0x' + 'aa'.repeat(20),
+        recipient: '0x' + 'bb'.repeat(20),
+      })
+    ).rejects.toThrow('Unsupported source denom')
+  })
+
+  it('fetchDeBridgeApi times out', async () => {
+    fetchMock.mockImplementationOnce(() => {
+      return new Promise((_, reject) => {
+        const err = new Error('The operation was aborted')
+        err.name = 'AbortError'
+        setTimeout(() => reject(err), 10)
+      })
+    })
+
+    await expect(
+      fetchDeBridgeApi('https://dln.debridge.finance/v1.0/dln/order/create-tx?x=1')
+    ).rejects.toThrow('timed out')
+  })
+})
+
 describe('debridge namespace export', () => {
   it('exposes quote/send functions', () => {
     expect(typeof debridge.getQuote).toBe('function')

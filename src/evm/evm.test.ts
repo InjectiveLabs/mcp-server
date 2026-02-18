@@ -156,6 +156,14 @@ describe('broadcastEvmTx', () => {
     const authInfo = AuthInfo.fromBinary(txRaw.authInfoBytes)
     expect(authInfo.signerInfos).toHaveLength(0)
     expect(txRaw.signatures).toHaveLength(0)
+
+    // Fee must be populated per Ethermint BuildTx convention
+    expect(authInfo.fee).toBeDefined()
+    expect(authInfo.fee!.gasLimit).toBe(300000n) // DEFAULT_GAS_LIMIT
+    expect(authInfo.fee!.amount).toHaveLength(1)
+    expect(authInfo.fee!.amount[0]!.denom).toBe('inj')
+    // feeAmount = gasPrice(2000000000) * gasLimit(300000) = 600000000000000
+    expect(authInfo.fee!.amount[0]!.amount).toBe('600000000000000')
   })
 
   it('uses caller-provided nonce and gas params without extra chain queries', async () => {
@@ -210,5 +218,54 @@ describe('broadcastEvmTx', () => {
         to,
       })
     ).rejects.toThrow('grpc unavailable')
+  })
+
+  it('throws when broadcast response has no txHash', async () => {
+    mockBroadcast.mockResolvedValueOnce({
+      txHash: '',
+      code: 0,
+      rawLog: '',
+    })
+
+    await expect(
+      broadcastEvmTx(config, { privateKeyHex, to })
+    ).rejects.toThrow('Transaction hash missing')
+  })
+
+  it('throws for invalid chainId', async () => {
+    await expect(
+      broadcastEvmTx(config, { privateKeyHex, to, chainId: 0 })
+    ).rejects.toThrow('Invalid EVM chain ID')
+  })
+
+  it('throws for negative chainId', async () => {
+    await expect(
+      broadcastEvmTx(config, { privateKeyHex, to, chainId: -1 })
+    ).rejects.toThrow('Invalid EVM chain ID')
+  })
+
+  it('populates AuthInfo.fee with gasPrice * gasLimit in caller-override case', async () => {
+    await broadcastEvmTx(config, {
+      privateKeyHex,
+      to,
+      nonce: 0,
+      gasPrice: '5000000000',
+      gasLimit: 100000,
+    })
+
+    const [txRawArg] = mockBroadcast.mock.calls[0] ?? []
+    const txRaw = txRawArg as TxRaw
+    const authInfo = AuthInfo.fromBinary(txRaw.authInfoBytes)
+    expect(authInfo.fee).toBeDefined()
+    expect(authInfo.fee!.gasLimit).toBe(100000n)
+    expect(authInfo.fee!.amount[0]!.denom).toBe('inj')
+    // 5000000000 * 100000 = 500000000000000
+    expect(authInfo.fee!.amount[0]!.amount).toBe('500000000000000')
+  })
+})
+
+describe('ethAddressToInj', () => {
+  it('throws for invalid ethereum address', () => {
+    expect(() => ethAddressToInj('0x1234')).toThrow('Invalid Ethereum address')
   })
 })
