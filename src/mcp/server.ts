@@ -158,7 +158,9 @@ server.tool(
 
 server.tool(
   'account_balances',
-  'Get bank and subaccount balances for an Injective address.',
+  'Get bank and subaccount balances for an Injective address. ' +
+  'Supports all token types: native (INJ), peggy, IBC, factory, and MTS (erc20:0x...) tokens. ' +
+  'Automatically resolves token symbols and decimals from on-chain metadata.',
   {
     address: injAddress.describe('The inj1... address to query.'),
   },
@@ -185,6 +187,32 @@ server.tool(
       content: [{
         type: 'text',
         text: JSON.stringify(positions, null, 2),
+      }],
+    }
+  },
+)
+
+// ─── Token Tools ────────────────────────────────────────────────────────────
+
+server.tool(
+  'token_metadata',
+  'Look up token metadata (symbol, decimals, type) for a bank denom. ' +
+  'Supports native (inj), peggy, IBC, factory, and MTS (erc20:0x...) denoms. ' +
+  'Resolves metadata from on-chain denom registry when available.',
+  {
+    denom: z.string().min(1).describe('The bank denom to look up, e.g. "inj", "peggy0x...", "erc20:0x..."'),
+  },
+  async ({ denom }) => {
+    const meta = await accounts.getDenomMetadata(config, denom)
+    return {
+      content: [{
+        type: 'text',
+        text: JSON.stringify({
+          denom,
+          symbol: meta.symbol,
+          decimals: meta.decimals,
+          tokenType: meta.tokenType,
+        }, null, 2),
       }],
     }
   },

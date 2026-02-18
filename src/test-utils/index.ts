@@ -7,10 +7,11 @@
  *
  * Unit tests use the mock factories below and never hit real APIs.
  */
+import { vi } from 'vitest'
 import Decimal from 'decimal.js'
 import type { Config, NetworkName } from '../config/index.js'
 import type { PerpMarket } from '../markets/index.js'
-import type { Position, Balances, BankBalance, SubaccountBalance } from '../accounts/index.js'
+import type { Position, Balances, BankBalance, SubaccountBalance, TokenType } from '../accounts/index.js'
 
 // ─── Config helpers ──────────────────────────────────────────────────────────
 
@@ -106,8 +107,8 @@ export function mockPosition(overrides: Partial<Position> = {}): Position {
 export function mockBalances(overrides: Partial<Balances> = {}): Balances {
   return {
     bank: overrides.bank ?? [
-      { denom: 'inj', symbol: 'INJ', amount: '1.000000', decimals: 18 },
-      { denom: 'peggy0xdAC17F958D2ee523a2206206994597C13D831ec7', symbol: 'USDT', amount: '1000.000000', decimals: 6 },
+      { denom: 'inj', symbol: 'INJ', amount: '1.000000', decimals: 18, tokenType: 'native' as TokenType },
+      { denom: 'peggy0xdAC17F958D2ee523a2206206994597C13D831ec7', symbol: 'USDT', amount: '1000.000000', decimals: 6, tokenType: 'peggy' as TokenType },
     ],
     subaccount: overrides.subaccount ?? [
       {
@@ -117,8 +118,38 @@ export function mockBalances(overrides: Partial<Balances> = {}): Balances {
         total: '500.000000',
         available: '400.000000',
         decimals: 6,
+        tokenType: 'peggy' as TokenType,
       },
     ],
+  }
+}
+
+// ─── Bank API mock ──────────────────────────────────────────────────────────
+
+/**
+ * Create a mock bankApi.fetchDenomMetadata that returns empty metadata
+ * (simulating denoms with no on-chain metadata registered).
+ * Override for specific denoms as needed in tests.
+ */
+export function mockBankApi(metadataMap: Record<string, { symbol?: string; name?: string; denomUnits?: { denom: string; exponent: number }[] }> = {}) {
+  return {
+    fetchDenomMetadata: vi.fn(async (denom: string) => {
+      const meta = metadataMap[denom]
+      if (meta) {
+        return {
+          description: '',
+          denomUnits: meta.denomUnits ?? [],
+          base: denom,
+          display: meta.symbol ?? '',
+          name: meta.name ?? '',
+          symbol: meta.symbol ?? '',
+          uri: '',
+          uriHash: '',
+        }
+      }
+      // No metadata registered — throw like the real API does
+      throw new Error(`denom metadata not found for ${denom}`)
+    }),
   }
 }
 

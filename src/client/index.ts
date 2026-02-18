@@ -9,6 +9,7 @@ import {
   IndexerGrpcDerivativesApi,
   IndexerGrpcOracleApi,
   IndexerGrpcAccountPortfolioApi,
+  ChainGrpcBankApi,
   MsgBroadcasterWithPk,
   PrivateKey,
 } from '@injectivelabs/sdk-ts'
@@ -19,6 +20,7 @@ export interface InjectiveClient {
   derivativesApi: IndexerGrpcDerivativesApi
   oracleApi: IndexerGrpcOracleApi
   portfolioApi: IndexerGrpcAccountPortfolioApi
+  bankApi: ChainGrpcBankApi
   endpoints: Config['endpoints']
   chainId: string
   network: NetworkName
@@ -39,6 +41,7 @@ export function createClient(config: Config): InjectiveClient {
     derivativesApi: new IndexerGrpcDerivativesApi(config.endpoints.indexer),
     oracleApi: new IndexerGrpcOracleApi(config.endpoints.indexer),
     portfolioApi: new IndexerGrpcAccountPortfolioApi(config.endpoints.indexer),
+    bankApi: new ChainGrpcBankApi(config.endpoints.grpc),
     endpoints: config.endpoints,
     chainId: config.chainId,
     network: config.network,
