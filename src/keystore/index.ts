@@ -9,7 +9,7 @@
  * If the integration layer logs function calls, passwords may be visible.
  * This is a known trade-off documented here intentionally.
  */
-import { createHash, randomBytes, scryptSync, createCipheriv, createDecipheriv } from 'node:crypto'
+import { randomBytes, scryptSync, createCipheriv, createDecipheriv } from 'node:crypto'
 import { mkdirSync, writeFileSync, readFileSync, existsSync, unlinkSync, readdirSync, chmodSync } from 'node:fs'
 import { join } from 'node:path'
 import { homedir } from 'node:os'
@@ -87,6 +87,9 @@ export const keystore = {
 
     const path = keyPath(address)
     writeFileSync(path, JSON.stringify(keyFile, null, 2), { mode: 0o600 })
+    // Ensure correct permissions even when overwriting an existing file —
+    // writeFileSync's mode option only applies on file creation.
+    chmodSync(path, 0o600)
   },
 
   load(address: string, password: string): string {

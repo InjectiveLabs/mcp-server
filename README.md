@@ -14,8 +14,9 @@ Exposes Injective perpetual futures trading as MCP tools for Claude Desktop / Cl
 | `wallet_remove` | Remove a wallet from the keystore |
 | `market_list` | List all active perpetual markets |
 | `market_price` | Get oracle price for a market |
-| `account_balances` | Get bank + subaccount balances |
+| `account_balances` | Get bank + subaccount balances (all token types) |
 | `account_positions` | Get open positions with P&L |
+| `token_metadata` | Look up token symbol, decimals, type for any denom |
 | `trade_open` | Open a perpetual position (market order) |
 | `trade_close` | Close an open position (market order) |
 
@@ -121,6 +122,25 @@ npm run typecheck     # type check only
 | `@injectivelabs/utils` | BigNumber utilities |
 | `decimal.js` | Arbitrary-precision financial math |
 | `@modelcontextprotocol/sdk` | MCP server framework |
+
+## Supported Token Types
+
+Balances and token metadata support all Injective denom formats, including MTS (MultiVM Token Standard) tokens:
+
+| Type | Denom format | Example |
+|---|---|---|
+| Native | `inj` | INJ |
+| Peggy (bridged ERC20) | `peggy0x...` | USDT |
+| IBC | `ibc/...` | ATOM via IBC |
+| Factory | `factory/inj.../name` | TokenFactory tokens |
+| MTS (ERC20) | `erc20:0x...` | EVM-deployed tokens |
+
+Token metadata (symbol, decimals) is resolved automatically:
+1. **Hardcoded** — well-known denoms (INJ, USDT) for instant resolution
+2. **On-chain** — `ChainGrpcBankApi.fetchDenomMetadata()` for registered tokens
+3. **Pattern-based** — fallback display names for unregistered denoms
+
+Results are cached in-memory for the lifetime of the server process.
 
 ## Network Support
 

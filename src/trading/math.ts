@@ -70,15 +70,15 @@ export function calcMargin(price: Decimal, quantity: Decimal, leverage: Decimal)
  *
  * For longs:
  *   liqPrice = entryPrice × (1 - 1/leverage + maintenanceMarginRatio)
- *   (price must fall by ~1/leverage before position is liquidated)
+ *   (price must fall by ~(1/leverage - MMR) before liquidation)
  *
  * For shorts:
- *   liqPrice = entryPrice × (1 + 1/leverage + maintenanceMarginRatio)
- *   (price must rise by ~1/leverage before position is liquidated)
+ *   liqPrice = entryPrice × (1 + 1/leverage - maintenanceMarginRatio)
+ *   (price must rise by ~(1/leverage - MMR) before liquidation)
  *
- * Note: maintenanceMarginRatio is ADDED on both sides because it represents
- * the buffer below which equity triggers liquidation — it widens the gap to
- * liquidation in both directions.
+ * The MMR is ADDED for longs (raises liq price, reducing the buffer) and
+ * SUBTRACTED for shorts (lowers liq price, reducing the buffer). In both
+ * cases the effective distance to liquidation is (1/leverage - MMR).
  */
 export function calcLiquidationPrice(
   entryPrice: Decimal,
@@ -90,26 +90,5 @@ export function calcLiquidationPrice(
   if (side === 'long') {
     return entryPrice.mul(new Decimal(1).minus(leverageFraction).plus(maintenanceMarginRatio))
   }
-  return entryPrice.mul(new Decimal(1).plus(leverageFraction).plus(maintenanceMarginRatio))
-}
-
-/**
- * Convert a human-readable price (e.g. "30000.50") to the chain's integer
- * representation by scaling by 10^quoteDecimals / tickSize scale.
- *
- * On Injective, derivative market prices are stored as:
- *   price_in_chain = human_price × 10^(quoteDecimals - priceDecimals)
- *
- * minPriceTickSize from the API is already in chain units (e.g. "1000").
- * We quantize to that tick size and return the chain-unit string.
- */
-export function priceToChainFormat(humanPrice: Decimal, minPriceTickSize: Decimal): string {
-  return quantize(humanPrice, minPriceTickSize).toFixed(0)
-}
-
-/**
- * Convert a human-readable quantity to chain format and quantize to tick size.
- */
-export function quantityToChainFormat(humanQuantity: Decimal, minQuantityTickSize: Decimal): string {
-  return quantize(humanQuantity, minQuantityTickSize).toFixed(18).replace(/\.?0+$/, '')
+  return entryPrice.mul(new Decimal(1).plus(leverageFraction).minus(maintenanceMarginRatio))
 }

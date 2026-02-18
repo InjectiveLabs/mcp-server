@@ -92,7 +92,7 @@ describe('calcLiquidationPrice', () => {
       new Decimal('0.05'),
       'short',
     )
-    // 30000 * (1 + 0.1 + 0.05) = 30000 * 1.15 = 34500
-    expect(liq.toFixed(0)).toBe('34500')
+    // 30000 * (1 + 0.1 - 0.05) = 30000 * 1.05 = 31500
+    expect(liq.toFixed(0)).toBe('31500')
   })
 })

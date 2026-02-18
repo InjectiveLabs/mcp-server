@@ -13,9 +13,18 @@ export interface Config {
   ethereumChainId: number
 }
 
+const VALID_NETWORKS = new Set<string>(['mainnet', 'testnet'])
+
 const NETWORK_MAP: Record<NetworkName, Network> = {
   mainnet: Network.MainnetSentry,
   testnet: Network.TestnetSentry,
+}
+
+export function validateNetwork(value: string): NetworkName {
+  if (!VALID_NETWORKS.has(value)) {
+    throw new Error(`Invalid network "${value}" — must be "mainnet" or "testnet"`)
+  }
+  return value as NetworkName
 }
 
 export function createConfig(network: NetworkName = 'testnet'): Config {

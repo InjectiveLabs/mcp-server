@@ -13,11 +13,16 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import { z } from 'zod'
-import { createConfig } from '../config/index.js'
+import { createConfig, validateNetwork } from '../config/index.js'
 import { wallets } from '../wallets/index.js'
 import { markets } from '../markets/index.js'
 import { accounts } from '../accounts/index.js'
 import { trading } from '../trading/index.js'
+import { transfers } from '../transfers/index.js'
+import { bridges } from '../bridges/index.js'
+
+const injAddress = z.string().regex(/^inj1[a-z0-9]{38}$/, 'Must be a valid inj1... address (42 chars)')
+const numericString = z.string().regex(/^\d+(\.\d+)?$/, 'Must be a positive numeric string')
 
 const server = new McpServer({
   name: 'injective-agent',
@@ -26,7 +31,7 @@ const server = new McpServer({
 
 // ─── Config ─────────────────────────────────────────────────────────────────
 
-const NETWORK = (process.env['INJECTIVE_NETWORK'] ?? 'testnet') as 'mainnet' | 'testnet'
+const NETWORK = validateNetwork(process.env['INJECTIVE_NETWORK'] ?? 'testnet')
 const config = createConfig(NETWORK)
 
 // ─── Wallet Tools ────────────────────────────────────────────────────────────
@@ -98,7 +103,7 @@ server.tool(
   'wallet_remove',
   'Remove a wallet from the local keystore. This deletes the encrypted key file permanently.',
   {
-    address: z.string().describe('The inj1... address of the wallet to remove.'),
+    address: injAddress.describe('The inj1... address of the wallet to remove.'),
   },
   async ({ address }) => {
     const removed = wallets.remove(address)
@@ -155,9 +160,11 @@ server.tool(
 
 server.tool(
   'account_balances',
-  'Get bank and subaccount balances for an Injective address.',
+  'Get bank and subaccount balances for an Injective address. ' +
+  'Supports all token types: native (INJ), peggy, IBC, factory, and MTS (erc20:0x...) tokens. ' +
+  'Automatically resolves token symbols and decimals from on-chain metadata.',
   {
-    address: z.string().describe('The inj1... address to query.'),
+    address: injAddress.describe('The inj1... address to query.'),
   },
   async ({ address }) => {
     const balances = await accounts.getBalances(config, address)
@@ -174,7 +181,7 @@ server.tool(
   'account_positions',
   'Get all open perpetual positions and unrealized P&L for an address.',
   {
-    address: z.string().describe('The inj1... address to query.'),
+    address: injAddress.describe('The inj1... address to query.'),
   },
   async ({ address }) => {
     const positions = await accounts.getPositions(config, address)
@@ -182,6 +189,32 @@ server.tool(
       content: [{
         type: 'text',
         text: JSON.stringify(positions, null, 2),
+      }],
+    }
+  },
+)
+
+// ─── Token Tools ────────────────────────────────────────────────────────────
+
+server.tool(
+  'token_metadata',
+  'Look up token metadata (symbol, decimals, type) for a bank denom. ' +
+  'Supports native (inj), peggy, IBC, factory, and MTS (erc20:0x...) denoms. ' +
+  'Resolves metadata from on-chain denom registry when available.',
+  {
+    denom: z.string().min(1).describe('The bank denom to look up, e.g. "inj", "peggy0x...", "erc20:0x..."'),
+  },
+  async ({ denom }) => {
+    const meta = await accounts.getDenomMetadata(config, denom)
+    return {
+      content: [{
+        type: 'text',
+        text: JSON.stringify({
+          denom,
+          symbol: meta.symbol,
+          decimals: meta.decimals,
+          tokenType: meta.tokenType,
+        }, null, 2),
       }],
     }
   },
@@ -196,11 +229,11 @@ server.tool(
   'Always confirm the parameters with the user before calling this tool. ' +
   'Returns txHash, execution price, quantity, margin, and liquidation price.',
   {
-    address: z.string().describe('The inj1... address of the trading wallet.'),
+    address: injAddress.describe('The inj1... address of the trading wallet.'),
     password: z.string().describe('Keystore password to decrypt the private key for signing.'),
     symbol: z.string().describe('Market symbol, e.g. "BTC" or "ETH".'),
     side: z.enum(['long', 'short']).describe('long = buy the underlying, short = sell the underlying.'),
-    amount: z.string().describe('Notional amount in USDT, e.g. "100" means a $100 position.'),
+    amount: numericString.describe('Notional amount in USDT, e.g. "100" means a $100 position.'),
     leverage: z.number().min(1).max(50).optional().describe('Leverage multiplier. Default: 10.'),
     slippage: z.number().min(0).max(0.5).optional().describe('Max slippage as fraction. Default: 0.01 (1%).'),
   },
@@ -223,7 +256,7 @@ server.tool(
   'IMPORTANT: This executes a real on-chain transaction. ' +
   'Confirm with the user before calling. Returns txHash, exit price, and realized P&L.',
   {
-    address: z.string().describe('The inj1... address of the trading wallet.'),
+    address: injAddress.describe('The inj1... address of the trading wallet.'),
     password: z.string().describe('Keystore password to decrypt the private key for signing.'),
     symbol: z.string().describe('Market symbol of the position to close, e.g. "BTC".'),
     slippage: z.number().min(0).max(0.5).optional().describe('Max slippage as fraction. Default: 0.05 (5%).'),
@@ -231,6 +264,116 @@ server.tool(
   async ({ address, password, symbol, slippage }) => {
     const result = await trading.close(config, {
       address, password, symbol, slippage,
+    })
+    return {
+      content: [{
+        type: 'text',
+        text: JSON.stringify(result, null, 2),
+      }],
+    }
+  },
+)
+
+// ─── Transfer Tools ─────────────────────────────────────────────────────────
+
+const ethAddress = z.string().regex(/^0x[a-fA-F0-9]{40}$/, 'Must be a valid 0x... Ethereum address (42 chars)')
+
+server.tool(
+  'transfer_send',
+  'Send tokens to another Injective address. ' +
+  'IMPORTANT: This executes a real on-chain transaction. Confirm with the user first. ' +
+  'Supports all token types: INJ, USDT, IBC tokens, factory tokens, MTS (erc20:0x...) tokens.',
+  {
+    address: injAddress.describe('Sender inj1... address (must be in local keystore).'),
+    password: z.string().describe('Keystore password to decrypt the private key.'),
+    recipient: injAddress.describe('Recipient inj1... address.'),
+    denom: z.string().min(1).describe('Token denom to send, e.g. "inj", "peggy0x...", "erc20:0x..."'),
+    amount: numericString.describe('Human-readable amount to send, e.g. "1.5" for 1.5 INJ.'),
+  },
+  async ({ address, password, recipient, denom, amount }) => {
+    const result = await transfers.send(config, {
+      address, password, recipient, denom, amount,
+    })
+    return {
+      content: [{
+        type: 'text',
+        text: JSON.stringify(result, null, 2),
+      }],
+    }
+  },
+)
+
+server.tool(
+  'subaccount_deposit',
+  'Deposit tokens from bank balance into a trading subaccount. ' +
+  'IMPORTANT: Real on-chain transaction. Required before opening perpetual positions. ' +
+  'Confirm with the user first.',
+  {
+    address: injAddress.describe('The inj1... address of the wallet.'),
+    password: z.string().describe('Keystore password to decrypt the private key.'),
+    denom: z.string().min(1).describe('Token denom to deposit, e.g. "peggy0x..." for USDT.'),
+    amount: numericString.describe('Human-readable amount to deposit.'),
+    subaccountIndex: z.number().int().min(0).max(255).optional()
+      .describe('Subaccount index. Default: 0 (primary trading subaccount).'),
+  },
+  async ({ address, password, denom, amount, subaccountIndex }) => {
+    const result = await transfers.deposit(config, {
+      address, password, denom, amount, subaccountIndex,
+    })
+    return {
+      content: [{
+        type: 'text',
+        text: JSON.stringify(result, null, 2),
+      }],
+    }
+  },
+)
+
+server.tool(
+  'subaccount_withdraw',
+  'Withdraw tokens from a trading subaccount back to bank balance. ' +
+  'IMPORTANT: Real on-chain transaction. Funds locked in positions cannot be withdrawn. ' +
+  'Confirm with the user first.',
+  {
+    address: injAddress.describe('The inj1... address of the wallet.'),
+    password: z.string().describe('Keystore password to decrypt the private key.'),
+    denom: z.string().min(1).describe('Token denom to withdraw.'),
+    amount: numericString.describe('Human-readable amount to withdraw.'),
+    subaccountIndex: z.number().int().min(0).max(255).optional()
+      .describe('Subaccount index. Default: 0 (primary trading subaccount).'),
+  },
+  async ({ address, password, denom, amount, subaccountIndex }) => {
+    const result = await transfers.withdraw(config, {
+      address, password, denom, amount, subaccountIndex,
+    })
+    return {
+      content: [{
+        type: 'text',
+        text: JSON.stringify(result, null, 2),
+      }],
+    }
+  },
+)
+
+// ─── Bridge Tools ───────────────────────────────────────────────────────────
+
+server.tool(
+  'bridge_withdraw_to_eth',
+  'Withdraw tokens from Injective to an Ethereum address via the Peggy bridge. ' +
+  'IMPORTANT: Real cross-chain transaction. Bridge fee applies. Processing takes ~30 min. ' +
+  'Only supports peggy-bridged tokens (INJ, USDT, etc). Cannot be reversed once submitted. ' +
+  'Confirm all parameters with the user before calling.',
+  {
+    address: injAddress.describe('Sender inj1... address.'),
+    password: z.string().describe('Keystore password.'),
+    ethRecipient: ethAddress.describe('Recipient 0x... Ethereum address.'),
+    denom: z.string().min(1).describe('Token denom to withdraw (must be INJ or peggy-prefixed).'),
+    amount: numericString.describe('Human-readable amount to withdraw.'),
+    bridgeFee: numericString.optional().describe('Bridge fee in same denom (human-readable). Default: auto-minimum.'),
+  },
+  async ({ address, password, ethRecipient, denom, amount, bridgeFee }) => {
+    const result = await bridges.withdrawToEth(config, {
+      address, password, ethRecipient, denom, amount, bridgeFee,
     })
     return {
       content: [{
