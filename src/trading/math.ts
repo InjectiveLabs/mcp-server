@@ -92,24 +92,3 @@ export function calcLiquidationPrice(
   }
   return entryPrice.mul(new Decimal(1).plus(leverageFraction).plus(maintenanceMarginRatio))
 }
-
-/**
- * Convert a human-readable price (e.g. "30000.50") to the chain's integer
- * representation by scaling by 10^quoteDecimals / tickSize scale.
- *
- * On Injective, derivative market prices are stored as:
- *   price_in_chain = human_price × 10^(quoteDecimals - priceDecimals)
- *
- * minPriceTickSize from the API is already in chain units (e.g. "1000").
- * We quantize to that tick size and return the chain-unit string.
- */
-export function priceToChainFormat(humanPrice: Decimal, minPriceTickSize: Decimal): string {
-  return quantize(humanPrice, minPriceTickSize).toFixed(0)
-}
-
-/**
- * Convert a human-readable quantity to chain format and quantize to tick size.
- */
-export function quantityToChainFormat(humanQuantity: Decimal, minQuantityTickSize: Decimal): string {
-  return quantize(humanQuantity, minQuantityTickSize).toFixed(18).replace(/\.?0+$/, '')
-}

@@ -1,7 +1,7 @@
 // Core library barrel export
 // The integration layer (MCP, CLI, etc.) imports from here.
 
-export { createConfig } from './config/index.js'
+export { createConfig, validateNetwork } from './config/index.js'
 export type { Config, NetworkName } from './config/index.js'
 
 export { keystore } from './keystore/index.js'

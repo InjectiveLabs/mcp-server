@@ -13,11 +13,14 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import { z } from 'zod'
-import { createConfig } from '../config/index.js'
+import { createConfig, validateNetwork } from '../config/index.js'
 import { wallets } from '../wallets/index.js'
 import { markets } from '../markets/index.js'
 import { accounts } from '../accounts/index.js'
 import { trading } from '../trading/index.js'
+
+const injAddress = z.string().regex(/^inj1[a-z0-9]{38}$/, 'Must be a valid inj1... address (42 chars)')
+const numericString = z.string().regex(/^\d+(\.\d+)?$/, 'Must be a positive numeric string')
 
 const server = new McpServer({
   name: 'injective-agent',
@@ -26,7 +29,7 @@ const server = new McpServer({
 
 // ─── Config ─────────────────────────────────────────────────────────────────
 
-const NETWORK = (process.env['INJECTIVE_NETWORK'] ?? 'testnet') as 'mainnet' | 'testnet'
+const NETWORK = validateNetwork(process.env['INJECTIVE_NETWORK'] ?? 'testnet')
 const config = createConfig(NETWORK)
 
 // ─── Wallet Tools ────────────────────────────────────────────────────────────
@@ -98,7 +101,7 @@ server.tool(
   'wallet_remove',
   'Remove a wallet from the local keystore. This deletes the encrypted key file permanently.',
   {
-    address: z.string().describe('The inj1... address of the wallet to remove.'),
+    address: injAddress.describe('The inj1... address of the wallet to remove.'),
   },
   async ({ address }) => {
     const removed = wallets.remove(address)
@@ -157,7 +160,7 @@ server.tool(
   'account_balances',
   'Get bank and subaccount balances for an Injective address.',
   {
-    address: z.string().describe('The inj1... address to query.'),
+    address: injAddress.describe('The inj1... address to query.'),
   },
   async ({ address }) => {
     const balances = await accounts.getBalances(config, address)
@@ -174,7 +177,7 @@ server.tool(
   'account_positions',
   'Get all open perpetual positions and unrealized P&L for an address.',
   {
-    address: z.string().describe('The inj1... address to query.'),
+    address: injAddress.describe('The inj1... address to query.'),
   },
   async ({ address }) => {
     const positions = await accounts.getPositions(config, address)
@@ -196,11 +199,11 @@ server.tool(
   'Always confirm the parameters with the user before calling this tool. ' +
   'Returns txHash, execution price, quantity, margin, and liquidation price.',
   {
-    address: z.string().describe('The inj1... address of the trading wallet.'),
+    address: injAddress.describe('The inj1... address of the trading wallet.'),
     password: z.string().describe('Keystore password to decrypt the private key for signing.'),
     symbol: z.string().describe('Market symbol, e.g. "BTC" or "ETH".'),
     side: z.enum(['long', 'short']).describe('long = buy the underlying, short = sell the underlying.'),
-    amount: z.string().describe('Notional amount in USDT, e.g. "100" means a $100 position.'),
+    amount: numericString.describe('Notional amount in USDT, e.g. "100" means a $100 position.'),
     leverage: z.number().min(1).max(50).optional().describe('Leverage multiplier. Default: 10.'),
     slippage: z.number().min(0).max(0.5).optional().describe('Max slippage as fraction. Default: 0.01 (1%).'),
   },
@@ -223,7 +226,7 @@ server.tool(
   'IMPORTANT: This executes a real on-chain transaction. ' +
   'Confirm with the user before calling. Returns txHash, exit price, and realized P&L.',
   {
-    address: z.string().describe('The inj1... address of the trading wallet.'),
+    address: injAddress.describe('The inj1... address of the trading wallet.'),
     password: z.string().describe('Keystore password to decrypt the private key for signing.'),
     symbol: z.string().describe('Market symbol of the position to close, e.g. "BTC".'),
     slippage: z.number().min(0).max(0.5).optional().describe('Max slippage as fraction. Default: 0.05 (5%).'),

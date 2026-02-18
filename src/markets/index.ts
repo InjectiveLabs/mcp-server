@@ -53,28 +53,34 @@ export const markets = {
     // Filter to perpetual markets only (have initialMarginRatio)
     const perpMarkets: PerpMarket[] = rawMarkets
       .filter(m => 'initialMarginRatio' in m && m.initialMarginRatio)
+      .filter(m => {
+        // Runtime checks: skip markets missing required fields
+        const hasMMR = 'maintenanceMarginRatio' in m && typeof m.maintenanceMarginRatio === 'string'
+        if (!hasMMR) return false
+        return true
+      })
       .map(m => {
-        const perp = m as typeof m & {
-          initialMarginRatio: string
-          maintenanceMarginRatio: string
-          oracleBase?: string
-          oracleQuote?: string
-          oracleType?: string
-        }
+        const raw = m as unknown as Record<string, unknown>
+        const mmr = raw.maintenanceMarginRatio as string
+        const imr = raw.initialMarginRatio as string
+        const oBase = typeof raw.oracleBase === 'string' ? raw.oracleBase : extractSymbol(m.ticker)
+        const oQuote = typeof raw.oracleQuote === 'string' ? raw.oracleQuote : 'USDT'
+        const oType = typeof raw.oracleType === 'string' ? raw.oracleType : 'bandibc'
+
         return {
-          symbol: extractSymbol(perp.ticker),
-          marketId: perp.marketId,
-          ticker: perp.ticker,
-          tickSize: String(perp.minPriceTickSize),
-          minQuantityTick: String(perp.minQuantityTickSize),
-          minNotional: String(perp.minNotional),
-          initialMarginRatio: perp.initialMarginRatio,
-          maintenanceMarginRatio: perp.maintenanceMarginRatio,
-          takerFeeRate: perp.takerFeeRate,
+          symbol: extractSymbol(m.ticker),
+          marketId: m.marketId,
+          ticker: m.ticker,
+          tickSize: String(m.minPriceTickSize),
+          minQuantityTick: String(m.minQuantityTickSize),
+          minNotional: String(m.minNotional),
+          initialMarginRatio: imr,
+          maintenanceMarginRatio: mmr,
+          takerFeeRate: m.takerFeeRate,
           quoteDecimals: 6, // USDT on Injective uses 6 decimals
-          oracleBase: perp.oracleBase ?? extractSymbol(perp.ticker),
-          oracleQuote: perp.oracleQuote ?? 'USDT',
-          oracleType: perp.oracleType ?? 'bandibc',
+          oracleBase: oBase,
+          oracleQuote: oQuote,
+          oracleType: oType,
         }
       })
 

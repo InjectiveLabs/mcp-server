@@ -9,7 +9,7 @@
  * If the integration layer logs function calls, passwords may be visible.
  * This is a known trade-off documented here intentionally.
  */
-import { createHash, randomBytes, scryptSync, createCipheriv, createDecipheriv } from 'node:crypto'
+import { randomBytes, scryptSync, createCipheriv, createDecipheriv } from 'node:crypto'
 import { mkdirSync, writeFileSync, readFileSync, existsSync, unlinkSync, readdirSync, chmodSync } from 'node:fs'
 import { join } from 'node:path'
 import { homedir } from 'node:os'

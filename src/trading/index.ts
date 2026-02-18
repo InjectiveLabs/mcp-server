@@ -115,7 +115,8 @@ export const trading = {
       throw new NoLiquidity(market.marketId)
     }
 
-    // Sort: buys ascending (best buy = lowest ask), sells ascending (best sell = lowest bid)
+    // Walk the opposite side of the book: for a buy (long), walk the asks (sells);
+    // for a sell (short), walk the bids (buys).
     const orderbookLevels = levels.map(l => ({
       price: new Decimal(l.price),
       quantity: new Decimal(l.quantity),
@@ -276,8 +277,9 @@ export const trading = {
       throw new BroadcastFailed(message)
     }
 
-    // Realized PnL = (actualExitPrice - entryPrice) × qty × direction
-    // Use slippage-adjusted price (what was actually submitted to the chain).
+    // Estimated realized PnL — uses the slippage-adjusted submission price, not the
+    // actual on-chain fill price. The real P&L may differ due to price improvement
+    // or partial fills. Query the chain for the exact fill for reconciliation.
     const entryPrice = new Decimal(position.entryPrice)
     const direction = position.side === 'long' ? 1 : -1
     const realizedPnl = exitPriceWithSlippage.minus(entryPrice).mul(positionQty).mul(direction)

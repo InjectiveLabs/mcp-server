@@ -45,6 +45,12 @@ function formatDenom(denom: string): string {
   return denom
 }
 
+function safeDecimalStr(value: unknown, fallback = '0'): string {
+  if (typeof value === 'string' && value.length > 0) return value
+  if (typeof value === 'number' && Number.isFinite(value)) return String(value)
+  return fallback
+}
+
 function toHuman(raw: string, decimals: number): string {
   return new Decimal(raw).div(new Decimal(10).pow(decimals)).toFixed(6)
 }
@@ -91,9 +97,9 @@ export const accounts = {
       const market = allMarkets.find(m => m.marketId === pos.marketId)
       const symbol = market?.symbol ?? pos.marketId.slice(0, 8)
 
-      const entry = new Decimal(pos.entryPrice)
-      const mark = new Decimal(pos.markPrice)
-      const qty = new Decimal(pos.quantity)
+      const entry = new Decimal(safeDecimalStr(pos.entryPrice))
+      const mark = new Decimal(safeDecimalStr(pos.markPrice))
+      const qty = new Decimal(safeDecimalStr(pos.quantity))
       const isLong = pos.direction === 'long'
       const direction = isLong ? 1 : -1
 
