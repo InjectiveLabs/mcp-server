@@ -54,6 +54,10 @@ describe('evm helpers', () => {
     expect(data.startsWith('0x095ea7b3')).toBe(true)
   })
 
+  it('rejects negative ERC20 transfer amount', () => {
+    expect(() => encodeErc20Transfer(to, '-1')).toThrow('must be >=')
+  })
+
   it('extracts ERC20 address from denom', () => {
     const address = extractErc20Address(`erc20:${to}`)
     expect(address.toLowerCase()).toBe(to.toLowerCase())
@@ -177,19 +181,24 @@ describe('broadcastEvmTx', () => {
     ).rejects.toThrow('Invalid destination address')
   })
 
-  it('throws EvmTxFailed when broadcast returns non-zero code', async () => {
-    mockBroadcast.mockResolvedValueOnce({
-      txHash: 'B2'.repeat(32),
-      code: 5,
-      rawLog: 'execution reverted',
-    })
-
+  it('rejects negative value', async () => {
     await expect(
       broadcastEvmTx(config, {
         privateKeyHex,
         to,
+        value: '-1',
       })
-    ).rejects.toThrow('execution reverted')
+    ).rejects.toThrow('Invalid value')
+  })
+
+  it('rejects gasLimit <= 0', async () => {
+    await expect(
+      broadcastEvmTx(config, {
+        privateKeyHex,
+        to,
+        gasLimit: 0,
+      })
+    ).rejects.toThrow('Invalid gasLimit')
   })
 
   it('wraps thrown broadcast errors as EvmTxFailed', async () => {

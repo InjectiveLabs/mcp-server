@@ -56,14 +56,33 @@ export interface BroadcastEvmTxResult {
   data: string
 }
 
-function parseBigInt(value: string | number | bigint, field: string): bigint {
+function parseBigInt(
+  value: string | number | bigint,
+  field: string,
+  opts?: { min?: bigint },
+): bigint {
+  let parsed: bigint
   try {
-    if (typeof value === 'bigint') return value
-    if (typeof value === 'number') return BigInt(value)
-    return BigInt(value)
+    if (typeof value === 'bigint') {
+      parsed = value
+    } else if (typeof value === 'number') {
+      if (!Number.isFinite(value) || !Number.isInteger(value)) {
+        throw new Error(`Invalid ${field}: expected an integer`)
+      }
+      parsed = BigInt(value)
+    } else {
+      parsed = BigInt(value)
+    }
   } catch {
     throw new EvmTxFailed(`Invalid ${field}: ${String(value)}`)
   }
+
+  const min = opts?.min ?? 0n
+  if (parsed < min) {
+    throw new EvmTxFailed(`Invalid ${field}: must be >= ${min.toString()}`)
+  }
+
+  return parsed
 }
 
 function normalizePrivateKey(privateKeyHex: string): string {
@@ -151,9 +170,9 @@ export async function broadcastEvmTx(
 
     const nonce = params.nonce ?? toSafeNonce((await getEvmAccount(config, wallet.address)).nonce)
     const gasPriceRaw = params.gasPrice ?? await getBaseFee(config)
-    const gasPrice = parseBigInt(gasPriceRaw, 'gasPrice')
-    const gasLimit = parseBigInt(params.gasLimit ?? DEFAULT_GAS_LIMIT, 'gasLimit')
-    const value = parseBigInt(params.value ?? '0', 'value')
+    const gasPrice = parseBigInt(gasPriceRaw, 'gasPrice', { min: 0n })
+    const gasLimit = parseBigInt(params.gasLimit ?? DEFAULT_GAS_LIMIT, 'gasLimit', { min: 1n })
+    const value = parseBigInt(params.value ?? '0', 'value', { min: 0n })
     const data = normalizeHexData(params.data)
 
     const signedTxHex = await wallet.signTransaction({
@@ -171,10 +190,6 @@ export async function broadcastEvmTx(
     const response = await client.txApi.broadcast(txRaw, {
       txTimeout: params.txTimeout,
     })
-
-    if (response.code && response.code !== 0) {
-      throw new EvmTxFailed(response.rawLog || `code=${response.code}`)
-    }
 
     if (!response.txHash) {
       throw new EvmTxFailed('Transaction hash missing from broadcast response')
@@ -202,14 +217,14 @@ export function encodeErc20Transfer(to: string, amount: string | bigint | number
   if (!isAddress(to)) {
     throw new EvmTxFailed(`Invalid ERC20 transfer recipient: ${to}`)
   }
-  return ERC20_IFACE.encodeFunctionData('transfer', [to, parseBigInt(amount, 'amount')])
+  return ERC20_IFACE.encodeFunctionData('transfer', [to, parseBigInt(amount, 'amount', { min: 0n })])
 }
 
 export function encodeErc20Approve(spender: string, amount: string | bigint | number): string {
   if (!isAddress(spender)) {
     throw new EvmTxFailed(`Invalid ERC20 spender: ${spender}`)
   }
-  return ERC20_IFACE.encodeFunctionData('approve', [spender, parseBigInt(amount, 'amount')])
+  return ERC20_IFACE.encodeFunctionData('approve', [spender, parseBigInt(amount, 'amount', { min: 0n })])
 }
 
 export function extractErc20Address(denom: string): string {

@@ -24,7 +24,7 @@ export function testConfig(network: NetworkName = 'testnet'): Config {
       rest: 'https://testnet.rest.injective.network',
     },
     chainId: network === 'mainnet' ? 'injective-1' : 'injective-888',
-    ethereumChainId: network === 'mainnet' ? 1 : 5,
+    ethereumChainId: network === 'mainnet' ? 1776 : 1439,
   }
 }
 

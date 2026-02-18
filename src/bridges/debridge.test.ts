@@ -20,6 +20,7 @@ const mocks = vi.hoisted(() => ({
   })),
   mockInjAddressToEth: vi.fn(() => '0x' + 'aa'.repeat(20)),
   mockExtractErc20Address: vi.fn((denom: string) => denom.replace('erc20:', '')),
+  mockEncodeErc20Approve: vi.fn(() => '0x095ea7b3'),
 }))
 
 vi.mock('../wallets/index.js', () => ({
@@ -40,6 +41,7 @@ vi.mock('../evm/index.js', () => ({
   },
   injAddressToEth: mocks.mockInjAddressToEth,
   extractErc20Address: mocks.mockExtractErc20Address,
+  encodeErc20Approve: mocks.mockEncodeErc20Approve,
 }))
 
 import { wallets } from '../wallets/index.js'
@@ -86,13 +88,21 @@ describe('debridge helpers', () => {
   it('fetchDeBridgeApi returns parsed json on success', async () => {
     fetchMock.mockResolvedValueOnce(new Response(JSON.stringify({ ok: true }), { status: 200 }))
 
-    const data = await fetchDeBridgeApi('https://example.com')
+    const data = await fetchDeBridgeApi('https://dln.debridge.finance/v1.0/dln/order/create-tx?x=1')
     expect(data['ok']).toBe(true)
   })
 
   it('fetchDeBridgeApi throws on non-200 responses', async () => {
     fetchMock.mockResolvedValueOnce(new Response(JSON.stringify({ error: 'bad request' }), { status: 400 }))
-    await expect(fetchDeBridgeApi('https://example.com')).rejects.toThrow('HTTP 400')
+    await expect(
+      fetchDeBridgeApi('https://dln.debridge.finance/v1.0/dln/order/create-tx?x=1')
+    ).rejects.toThrow('HTTP 400')
+  })
+
+  it('fetchDeBridgeApi blocks non-allowlisted hosts', async () => {
+    await expect(
+      fetchDeBridgeApi('https://example.com/dln/order/create-tx')
+    ).rejects.toThrow('Blocked outbound URL')
   })
 })
 
@@ -117,7 +127,6 @@ describe('debridge.getQuote', () => {
       dstChain: 'ethereum',
       dstTokenAddress: '0x' + 'bb'.repeat(20),
       recipient: '0x' + 'cc'.repeat(20),
-      apiBaseUrl: 'https://api.example.com',
     })
 
     expect(result.srcChainId).toBe(DEBRIDGE_INJECTIVE_CHAIN_ID)
@@ -144,7 +153,6 @@ describe('debridge.getQuote', () => {
       dstChain: 'base',
       dstTokenAddress: '0x' + 'ee'.repeat(20),
       recipient: '0x' + 'ff'.repeat(20),
-      apiBaseUrl: 'https://api.example.com',
     })
 
     expect(result.dstChainId).toBe(8453)
@@ -195,7 +203,6 @@ describe('debridge.sendBridge', () => {
       dstChain: 'base',
       dstTokenAddress: '0x' + 'bc'.repeat(20),
       recipient: '0x' + 'cd'.repeat(20),
-      apiBaseUrl: 'https://api.example.com',
     })
 
     expect(result.txHash).toBe('CC'.repeat(32))
@@ -204,6 +211,37 @@ describe('debridge.sendBridge', () => {
     expect(wallets.unlock).toHaveBeenCalledWith('inj1' + 'a'.repeat(38), 'secret-pass')
     expect(mocks.mockInjAddressToEth).toHaveBeenCalledWith('inj1' + 'a'.repeat(38))
     expect(evm.broadcastEvmTx).toHaveBeenCalledTimes(1)
+  })
+
+  it('sends ERC20 approve tx before bridge tx', async () => {
+    fetchMock.mockResolvedValueOnce(new Response(JSON.stringify({
+      orderId: 'order-erc20',
+      tx: {
+        to: '0x' + 'ab'.repeat(20),
+        data: '0x1234',
+        value: '0',
+      },
+    }), { status: 200 }))
+
+    const result = await sendBridge(config, {
+      address: 'inj1' + 'a'.repeat(38),
+      password: 'secret-pass',
+      srcDenom: 'erc20:0x' + 'dd'.repeat(20),
+      amount: '2.5',
+      dstChain: 'base',
+      dstTokenAddress: '0x' + 'bc'.repeat(20),
+      recipient: '0x' + 'cd'.repeat(20),
+    })
+
+    expect(result.approvalTxHash).toBe('CC'.repeat(32))
+    expect(mocks.mockEncodeErc20Approve).toHaveBeenCalledWith('0x' + 'ab'.repeat(20), '2500000')
+    expect(evm.broadcastEvmTx).toHaveBeenCalledTimes(2)
+
+    const firstCall = vi.mocked(evm.broadcastEvmTx).mock.calls[0]?.[1]
+    const secondCall = vi.mocked(evm.broadcastEvmTx).mock.calls[1]?.[1]
+    expect(firstCall?.to).toBe('0x' + 'dd'.repeat(20))
+    expect(secondCall?.to).toBe('0x' + 'ab'.repeat(20))
+    expect(secondCall?.nonce).toBe(2)
   })
 
   it('uses dstAuthorityAddress override when provided', async () => {
@@ -225,7 +263,6 @@ describe('debridge.sendBridge', () => {
       dstTokenAddress: '0x' + 'bc'.repeat(20),
       recipient: '0x' + 'cd'.repeat(20),
       dstAuthorityAddress: '0x' + 'ef'.repeat(20),
-      apiBaseUrl: 'https://api.example.com',
     })
 
     const calledUrl = String(fetchMock.mock.calls[0]?.[0] ?? '')

@@ -1,9 +1,10 @@
 import Decimal from 'decimal.js'
+import { isAddress } from 'ethers'
 import { Config } from '../config/index.js'
 import { wallets } from '../wallets/index.js'
 import { accounts } from '../accounts/index.js'
 import { toBaseUnits } from '../utils/denom-math.js'
-import { evm, injAddressToEth, extractErc20Address } from '../evm/index.js'
+import { evm, injAddressToEth, extractErc20Address, encodeErc20Approve } from '../evm/index.js'
 import {
   DeBridgeApiError,
   InvalidTransferAmount,
@@ -15,6 +16,7 @@ export const DEBRIDGE_API_BASE = 'https://dln.debridge.finance/v1.0'
 export const DEBRIDGE_INJECTIVE_CHAIN_ID = 100000029
 const DEBRIDGE_TIMEOUT_MS = 15_000
 const EVM_NATIVE_TOKEN = '0x0000000000000000000000000000000000000000'
+const DEBRIDGE_ALLOWED_HOSTS = new Set(['dln.debridge.finance'])
 
 const CHAIN_ID_BY_NAME: Record<string, number> = {
   ethereum: 1,
@@ -35,7 +37,6 @@ export interface DeBridgeQuoteParams {
   dstChain: string | number
   dstTokenAddress: string
   recipient: string
-  apiBaseUrl?: string
 }
 
 export interface DeBridgeQuoteResult {
@@ -63,6 +64,7 @@ export interface DeBridgeSendParams extends DeBridgeQuoteParams {
 export interface DeBridgeSendResult extends DeBridgeQuoteResult {
   txHash: string
   orderId: string
+  approvalTxHash?: string
 }
 
 function getSourceTokenAddress(denom: string): string {
@@ -136,6 +138,19 @@ export function resolveDstChainId(nameOrId: string | number): number {
 }
 
 export async function fetchDeBridgeApi(url: string): Promise<Record<string, unknown>> {
+  let parsedUrl: URL
+  try {
+    parsedUrl = new URL(url)
+  } catch {
+    throw new DeBridgeApiError('Invalid deBridge URL')
+  }
+
+  const isHttps = parsedUrl.protocol === 'https:'
+  const isAllowedHost = DEBRIDGE_ALLOWED_HOSTS.has(parsedUrl.hostname.toLowerCase())
+  if (!isHttps || !isAllowedHost) {
+    throw new DeBridgeApiError('Blocked outbound URL: only https://dln.debridge.finance is allowed')
+  }
+
   const controller = new AbortController()
   const timeout = setTimeout(() => controller.abort(), DEBRIDGE_TIMEOUT_MS)
 
@@ -186,9 +201,8 @@ function buildCreateTxUrl(
     srcChainOrderAuthorityAddress?: string
     dstChainOrderAuthorityAddress?: string
   },
-  apiBaseUrl = DEBRIDGE_API_BASE,
 ): string {
-  const base = apiBaseUrl.replace(/\/+$/, '')
+  const base = DEBRIDGE_API_BASE.replace(/\/+$/, '')
   const query = toQueryString({
     srcChainId: DEBRIDGE_INJECTIVE_CHAIN_ID,
     srcChainTokenIn: params.srcChainTokenIn,
@@ -223,7 +237,7 @@ export async function getQuote(config: Config, params: DeBridgeQuoteParams): Pro
     dstChainId,
     dstChainTokenOut: params.dstTokenAddress,
     dstChainTokenOutRecipient: params.recipient,
-  }, params.apiBaseUrl)
+  })
   const response = await fetchDeBridgeApi(url)
 
   return {
@@ -261,11 +275,57 @@ export async function sendBridge(config: Config, params: DeBridgeSendParams): Pr
     dstChainTokenOutRecipient: params.recipient,
     srcChainOrderAuthorityAddress: srcAuthorityAddress,
     dstChainOrderAuthorityAddress: dstAuthorityAddress,
-  }, params.apiBaseUrl)
+  })
 
   const response = await fetchDeBridgeApi(url)
   const { tx, orderId } = parseOrderResponse(response)
+  if (!isAddress(tx.to)) {
+    throw new DeBridgeApiError(`Invalid tx.to address from deBridge response: ${tx.to}`)
+  }
   const privateKeyHex = wallets.unlock(params.address, params.password)
+  let approvalTxHash: string | undefined
+
+  // For ERC20 bridge-ins, approve the deBridge execution contract first.
+  if (params.srcDenom.startsWith('erc20:')) {
+    const approveData = encodeErc20Approve(tx.to, srcAmountBase)
+    const approveResult = await evm.broadcastEvmTx(config, {
+      privateKeyHex,
+      to: srcTokenAddress,
+      data: approveData,
+      value: '0',
+      memo: `debridge approve ${orderId}`,
+      gasLimit: params.gasLimit,
+      gasPrice: params.gasPrice,
+    })
+    approvalTxHash = approveResult.txHash
+
+    const bridgeResult = await evm.broadcastEvmTx(config, {
+      privateKeyHex,
+      to: tx.to,
+      data: tx.data,
+      value: tx.value,
+      nonce: approveResult.nonce + 1,
+      gasLimit: params.gasLimit,
+      gasPrice: params.gasPrice,
+      memo: params.memo ?? `debridge order ${orderId}`,
+    })
+
+    return {
+      txHash: bridgeResult.txHash,
+      approvalTxHash,
+      orderId,
+      srcChainId: DEBRIDGE_INJECTIVE_CHAIN_ID,
+      dstChainId,
+      srcDenom: params.srcDenom,
+      srcTokenAddress,
+      srcAmount: params.amount,
+      srcAmountBase,
+      dstTokenAddress: params.dstTokenAddress,
+      recipient: params.recipient,
+      estimation: pickEstimation(response),
+      quote: response,
+    }
+  }
 
   const evmResult = await evm.broadcastEvmTx(config, {
     privateKeyHex,
@@ -279,6 +339,7 @@ export async function sendBridge(config: Config, params: DeBridgeSendParams): Pr
 
   return {
     txHash: evmResult.txHash,
+    approvalTxHash,
     orderId,
     srcChainId: DEBRIDGE_INJECTIVE_CHAIN_ID,
     dstChainId,
