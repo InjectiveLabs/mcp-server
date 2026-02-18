@@ -4,4 +4,9 @@ dist/
 *.d.ts.map
 .env
 .env.*
-~/.injective-agent/
+.claude/
+.DS_Store
+*.tgz
+coverage/
+*.log
+ai_plan.md
