@@ -87,6 +87,9 @@ export const keystore = {
 
     const path = keyPath(address)
     writeFileSync(path, JSON.stringify(keyFile, null, 2), { mode: 0o600 })
+    // Ensure correct permissions even when overwriting an existing file —
+    // writeFileSync's mode option only applies on file creation.
+    chmodSync(path, 0o600)
   },
 
   load(address: string, password: string): string {
