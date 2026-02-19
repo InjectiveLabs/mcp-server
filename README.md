@@ -19,6 +19,10 @@ Exposes Injective perpetual futures trading as MCP tools for Claude Desktop / Cl
 | `token_metadata` | Look up token symbol, decimals, type for any denom |
 | `trade_open` | Open a perpetual position (market order) |
 | `trade_close` | Close an open position (market order) |
+| `trade_limit_open` | Open a perpetual limit order |
+| `trade_limit_orders` | List open perpetual limit orders |
+| `trade_limit_close` | Cancel a perpetual limit order (by `orderHash`) |
+| `trade_limit_states` | Query derivative order states by order hash |
 
 ## Architecture
 
@@ -35,7 +39,8 @@ Core Library
 ├── wallets/    Wallet generation and management
 ├── markets/    Market data with caching
 ├── accounts/   Balances and positions
-└── trading/    Open/close perpetual positions
+├── trading/    Open/close perpetual positions
+└── orders/     Perpetual limit order lifecycle
     │
     ▼
 Injective Chain (via @injectivelabs/sdk-ts)
@@ -95,6 +100,12 @@ Once connected, Claude can:
 5. **Open a position** — `trade_open` with symbol, side, amount, leverage
 6. **Monitor** — `account_positions` to see P&L
 7. **Close** — `trade_close`
+
+For limit-order workflows:
+1. **Open limit order** — `trade_limit_open`
+2. **List open orders** — `trade_limit_orders`
+3. **Cancel order** — `trade_limit_close` (requires `orderHash`)
+4. **Check state** — `trade_limit_states`
 
 ## Security
 

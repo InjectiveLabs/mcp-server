@@ -6,6 +6,7 @@
  * - Basic retry with exponential backoff on transient failures
  */
 import {
+  IndexerGrpcAccountApi,
   IndexerGrpcDerivativesApi,
   IndexerGrpcOracleApi,
   IndexerGrpcAccountPortfolioApi,
@@ -23,6 +24,7 @@ export interface InjectiveClient {
   derivativesApi: IndexerGrpcDerivativesApi
   oracleApi: IndexerGrpcOracleApi
   portfolioApi: IndexerGrpcAccountPortfolioApi
+  accountApi: IndexerGrpcAccountApi
   bankApi: ChainGrpcBankApi
   peggyApi: ChainGrpcPeggyApi
   evmApi: ChainGrpcEvmApi
@@ -47,6 +49,7 @@ export function createClient(config: Config): InjectiveClient {
     derivativesApi: new IndexerGrpcDerivativesApi(config.endpoints.indexer),
     oracleApi: new IndexerGrpcOracleApi(config.endpoints.indexer),
     portfolioApi: new IndexerGrpcAccountPortfolioApi(config.endpoints.indexer),
+    accountApi: new IndexerGrpcAccountApi(config.endpoints.indexer),
     bankApi: new ChainGrpcBankApi(config.endpoints.grpc),
     peggyApi: new ChainGrpcPeggyApi(config.endpoints.grpc),
     evmApi: new ChainGrpcEvmApi(config.endpoints.grpc),

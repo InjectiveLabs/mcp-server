@@ -118,6 +118,7 @@ describe('createClient', () => {
     expect(client).toHaveProperty('derivativesApi')
     expect(client).toHaveProperty('oracleApi')
     expect(client).toHaveProperty('portfolioApi')
+    expect(client).toHaveProperty('accountApi')
     expect(client).toHaveProperty('bankApi')
     expect(client).toHaveProperty('peggyApi')
     expect(client).toHaveProperty('evmApi')

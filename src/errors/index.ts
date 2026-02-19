@@ -125,3 +125,19 @@ export class UnsupportedBridgeChain extends Error {
     this.name = 'UnsupportedBridgeChain'
   }
 }
+
+export class InvalidOrderStatesQuery extends Error {
+  readonly code = 'INVALID_ORDER_STATES_QUERY'
+  constructor() {
+    super('derivativeOrderHashes must be a non-empty array.')
+    this.name = 'InvalidOrderStatesQuery'
+  }
+}
+
+export class InvalidOrderParameters extends Error {
+  readonly code = 'INVALID_ORDER_PARAMETERS'
+  constructor(reason: string) {
+    super(`Invalid order parameters: ${reason}`)
+    this.name = 'InvalidOrderParameters'
+  }
+}

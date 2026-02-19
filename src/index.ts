@@ -19,6 +19,9 @@ export type { BankBalance, SubaccountBalance, Position, Balances, DenomMeta, Tok
 export { trading } from './trading/index.js'
 export type { OpenParams, OpenResult, CloseParams, CloseResult } from './trading/index.js'
 
+export { orders } from './orders/index.js'
+export type { TradeLimitOpenParams, TradeLimitOpenResult, TradeLimitOrdersParams, TradeLimitOrder, TradeLimitCloseParams, TradeLimitCloseResult, TradeLimitStatesParams, TradeLimitOrderState } from './orders/index.js'
+
 export { transfers } from './transfers/index.js'
 export type { SendParams, SendResult, SubaccountDepositParams, SubaccountDepositResult, SubaccountWithdrawParams, SubaccountWithdrawResult } from './transfers/index.js'
 

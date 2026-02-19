@@ -516,8 +516,8 @@ describe('accounts.getPositions', () => {
     expect(positions).toHaveLength(1)
     expect(positions[0]!.side).toBe('long')
     expect(positions[0]!.symbol).toBe('BTC')
-    // PnL = (31000 - 30000) * 1 * 1 = 1000
-    expect(positions[0]!.pnl).toBe('1000.000000')
+    // Prices are chain-scaled (÷1e6), so PnL = (0.031000 - 0.030000) * 1 * 1 = 0.001000
+    expect(positions[0]!.unrealizedPnl).toBe('0.001000')
   })
 
   it('calculates negative P&L for losing long', async () => {
@@ -535,8 +535,8 @@ describe('accounts.getPositions', () => {
     mockedMarketsList.mockResolvedValue([mockMarket()])
 
     const positions = await accounts.getPositions(testConfig(), 'inj1' + 'a'.repeat(38))
-    // PnL = (29000 - 30000) * 1 * 1 = -1000
-    expect(positions[0]!.pnl).toBe('-1000.000000')
+    // Prices are chain-scaled (÷1e6), so PnL = (0.029000 - 0.030000) * 1 * 1 = -0.001000
+    expect(positions[0]!.unrealizedPnl).toBe('-0.001000')
   })
 
   it('calculates P&L for short position', async () => {
@@ -554,8 +554,8 @@ describe('accounts.getPositions', () => {
     mockedMarketsList.mockResolvedValue([mockMarket()])
 
     const positions = await accounts.getPositions(testConfig(), 'inj1' + 'a'.repeat(38))
-    // Short PnL = (29000 - 30000) * 1 * -1 = 1000
-    expect(positions[0]!.pnl).toBe('1000.000000')
+    // Prices are chain-scaled (÷1e6), so short PnL = (0.029000 - 0.030000) * 1 * -1 = 0.001000
+    expect(positions[0]!.unrealizedPnl).toBe('0.001000')
   })
 
   it('calculates negative P&L for losing short', async () => {
@@ -573,8 +573,8 @@ describe('accounts.getPositions', () => {
     mockedMarketsList.mockResolvedValue([mockMarket()])
 
     const positions = await accounts.getPositions(testConfig(), 'inj1' + 'a'.repeat(38))
-    // Short PnL = (31000 - 30000) * 1 * -1 = -1000
-    expect(positions[0]!.pnl).toBe('-1000.000000')
+    // Prices are chain-scaled (÷1e6), so short PnL = (0.031000 - 0.030000) * 1 * -1 = -0.001000
+    expect(positions[0]!.unrealizedPnl).toBe('-0.001000')
   })
 
   it('handles empty positions array', async () => {
@@ -635,6 +635,6 @@ describe('accounts.getPositions', () => {
     const positions = await accounts.getPositions(testConfig(), 'inj1' + 'a'.repeat(38))
     expect(positions).toHaveLength(1)
     // Both entry and mark fall back to '0', so pnl = (0 - 0) * 1 * 1 = 0
-    expect(positions[0]!.pnl).toBe('0.000000')
+    expect(positions[0]!.unrealizedPnl).toBe('0.000000')
   })
 })

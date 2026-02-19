@@ -18,6 +18,7 @@ import { wallets } from '../wallets/index.js'
 import { markets } from '../markets/index.js'
 import { accounts } from '../accounts/index.js'
 import { trading } from '../trading/index.js'
+import { orders } from '../orders/index.js'
 import { transfers } from '../transfers/index.js'
 import { bridges } from '../bridges/index.js'
 import { debridge } from '../bridges/debridge.js'
@@ -266,6 +267,119 @@ server.tool(
   async ({ address, password, symbol, slippage }) => {
     const result = await trading.close(config, {
       address, password, symbol, slippage,
+    })
+    return {
+      content: [{
+        type: 'text',
+        text: JSON.stringify(result, null, 2),
+      }],
+    }
+  },
+)
+
+server.tool(
+  'trade_limit_open',
+  'Open a perpetual limit order. ' +
+  'IMPORTANT: This executes a real on-chain transaction with real funds. ' +
+  'Always confirm the parameters with the user before calling this tool.',
+  {
+    address: injAddress.describe('The inj1... address of the trading wallet.'),
+    password: z.string().describe('Keystore password to decrypt the private key for signing.'),
+    symbol: z.string().describe('Perpetual market symbol, e.g. "BTC" or "ETH".'),
+    side: z.enum(['buy', 'sell']).describe('buy = bid, sell = ask.'),
+    price: numericString.describe('Limit price in quote units (USDT), e.g. "32000".'),
+    quantity: numericString.describe('Base quantity, e.g. "0.01" for BTC.'),
+    margin: numericString.describe('Order margin in USDT, e.g. "10".'),
+    subaccountIndex: z.number().int().min(0).max(255).optional()
+      .describe('Subaccount index. Default: 0.'),
+    reduceOnly: z.boolean().optional().describe('Whether the limit order is reduce-only. Default: false.'),
+    postOnly: z.boolean().optional().describe('Whether the order must rest on book. Default: false.'),
+  },
+  async ({ address, password, symbol, side, price, quantity, margin, subaccountIndex, reduceOnly, postOnly }) => {
+    const result = await orders.tradeLimitOpen(config, {
+      address,
+      password,
+      symbol,
+      side,
+      price,
+      quantity,
+      margin,
+      subaccountIndex,
+      reduceOnly,
+      postOnly,
+    })
+    return {
+      content: [{
+        type: 'text',
+        text: JSON.stringify(result, null, 2),
+      }],
+    }
+  },
+)
+
+server.tool(
+  'trade_limit_orders',
+  'List open perpetual limit orders for an Injective address.',
+  {
+    address: injAddress.describe('The inj1... address of the wallet.'),
+    symbol: z.string().optional().describe('Optional market symbol filter, e.g. "BTC".'),
+    subaccountIndex: z.number().int().min(0).max(255).optional()
+      .describe('Subaccount index. Default: 0.'),
+  },
+  async ({ address, symbol, subaccountIndex }) => {
+    const result = await orders.tradeLimitOrders(config, {
+      address,
+      symbol,
+      subaccountIndex,
+    })
+    return {
+      content: [{
+        type: 'text',
+        text: JSON.stringify(result, null, 2),
+      }],
+    }
+  },
+)
+
+server.tool(
+  'trade_limit_close',
+  'Cancel an existing perpetual limit order. ' +
+  'IMPORTANT: This executes a real on-chain transaction. Confirm with the user before calling.',
+  {
+    address: injAddress.describe('The inj1... address of the trading wallet.'),
+    password: z.string().describe('Keystore password to decrypt the private key for signing.'),
+    symbol: z.string().describe('Perpetual market symbol, e.g. "BTC".'),
+    subaccountIndex: z.number().int().min(0).max(255).optional()
+      .describe('Subaccount index. Default: 0.'),
+    orderHash: z.string().min(1).describe('Order hash selector.'),
+  },
+  async ({ address, password, symbol, subaccountIndex, orderHash }) => {
+    const result = await orders.tradeLimitClose(config, {
+      address,
+      password,
+      symbol,
+      subaccountIndex,
+      orderHash,
+    })
+    return {
+      content: [{
+        type: 'text',
+        text: JSON.stringify(result, null, 2),
+      }],
+    }
+  },
+)
+
+server.tool(
+  'trade_limit_states',
+  'Get perpetual derivative order states by order hash.',
+  {
+    derivativeOrderHashes: z.array(z.string().min(1)).min(1)
+      .describe('Non-empty list of derivative order hashes to query.'),
+  },
+  async ({ derivativeOrderHashes }) => {
+    const result = await orders.tradeLimitStates(config, {
+      derivativeOrderHashes,
     })
     return {
       content: [{

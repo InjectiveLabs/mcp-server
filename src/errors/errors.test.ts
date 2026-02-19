@@ -16,6 +16,8 @@ import {
   EvmTxFailed,
   DeBridgeApiError,
   UnsupportedBridgeChain,
+  InvalidOrderStatesQuery,
+  InvalidOrderParameters,
 } from './index.js'
 
 describe('error classes', () => {
@@ -126,6 +128,20 @@ describe('error classes', () => {
     expect(err.message).toContain('moonbeam')
   })
 
+  it('InvalidOrderStatesQuery has correct code', () => {
+    const err = new InvalidOrderStatesQuery()
+    expect(err.code).toBe('INVALID_ORDER_STATES_QUERY')
+    expect(err.name).toBe('InvalidOrderStatesQuery')
+    expect(err.message).toContain('non-empty')
+  })
+
+  it('InvalidOrderParameters includes reason', () => {
+    const err = new InvalidOrderParameters('price must be > 0')
+    expect(err.code).toBe('INVALID_ORDER_PARAMETERS')
+    expect(err.name).toBe('InvalidOrderParameters')
+    expect(err.message).toContain('price must be > 0')
+  })
+
   it('all errors are instanceof Error', () => {
     const errors = [
       new WalletNotFound('x'),
@@ -144,6 +160,8 @@ describe('error classes', () => {
       new EvmTxFailed('x'),
       new DeBridgeApiError('x'),
       new UnsupportedBridgeChain('x'),
+      new InvalidOrderStatesQuery(),
+      new InvalidOrderParameters('x'),
     ]
     for (const err of errors) {
       expect(err).toBeInstanceOf(Error)
