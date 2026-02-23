@@ -267,7 +267,7 @@ describe('orders.tradeLimitStates', () => {
       accountApi: {
         fetchOrderStates: vi.fn().mockResolvedValue({
           orderStates: [
-            { orderHash: '0x1', status: 'booked' },
+            { orderHash: '0x1', status: 'booked', createdAt: 1700000000000n, updatedAt: 1700000001000n },
             { orderHash: '0x2', status: 'partially_filled' },
             { orderHash: '0x3', status: 'filled' },
             { orderHash: '0x4', status: 'canceled' },
@@ -285,5 +285,7 @@ describe('orders.tradeLimitStates', () => {
     expect(result[1]!.status).toBe('partial')
     expect(result[2]!.status).toBe('filled')
     expect(result[3]!.status).toBe('canceled')
+    expect(result[0]!.raw['createdAt']).toBe('1700000000000')
+    expect(() => JSON.stringify(result)).not.toThrow()
   })
 })

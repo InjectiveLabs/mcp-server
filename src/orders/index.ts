@@ -219,6 +219,20 @@ function normalizeOrderStatus(raw: unknown): 'booked' | 'partial' | 'filled' | '
   return 'unknown'
 }
 
+function toJsonSafe(value: unknown): unknown {
+  if (typeof value === 'bigint') return value.toString()
+  if (Array.isArray(value)) return value.map(item => toJsonSafe(item))
+  if (value && typeof value === 'object') {
+    const record = value as Record<string, unknown>
+    const safe: Record<string, unknown> = {}
+    for (const [key, nested] of Object.entries(record)) {
+      safe[key] = toJsonSafe(nested)
+    }
+    return safe
+  }
+  return value
+}
+
 function normalizeOrderState(raw: AnyRecord): TradeLimitOrderState {
   const orderHash = readString(raw, 'orderHash', 'order_hash', 'hash') ?? ''
   const nestedState = (raw['state'] && typeof raw['state'] === 'object')
@@ -238,7 +252,7 @@ function normalizeOrderState(raw: AnyRecord): TradeLimitOrderState {
     status,
     filledQuantity: readString(raw, 'filledQuantity', 'filled_quantity'),
     remainingQuantity: readString(raw, 'remainingQuantity', 'remaining_quantity', 'unfilledQuantity'),
-    raw,
+    raw: toJsonSafe(raw) as Record<string, unknown>,
   }
 }
 
