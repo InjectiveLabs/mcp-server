@@ -12,6 +12,7 @@
  */
 import Decimal from 'decimal.js'
 import { MsgCreateDerivativeLimitOrder, MsgCancelDerivativeOrder, OrderTypeMap, getEthereumAddress } from '@injectivelabs/sdk-ts'
+import { toHumanReadable } from '@injectivelabs/utils'
 import { Config } from '../config/index.js'
 import { markets } from '../markets/index.js'
 import { wallets } from '../wallets/index.js'
@@ -115,6 +116,19 @@ function parsePositiveDecimal(name: string, value: string): Decimal {
   return parsed
 }
 
+function parseNonNegativeDecimal(name: string, value: string): Decimal {
+  let parsed: Decimal
+  try {
+    parsed = new Decimal(value)
+  } catch {
+    throw new InvalidOrderParameters(`${name} must be a valid number`)
+  }
+  if (!parsed.isFinite() || parsed.lt(0)) {
+    throw new InvalidOrderParameters(`${name} must be zero or greater`)
+  }
+  return parsed
+}
+
 function toChainPrice(price: Decimal, tickSize: Decimal): string {
   const chainPrice = price.mul(QUOTE_SCALE)
   return quantize(chainPrice, tickSize).toFixed(0)
@@ -127,6 +141,14 @@ function toChainQuantity(quantity: Decimal, tickSize: Decimal): string {
 
 function usdtToBase(amount: Decimal): string {
   return amount.mul(QUOTE_SCALE).toFixed(0)
+}
+
+function fromChainPrice(raw: string): string {
+  try {
+    return toHumanReadable(raw, USDT_DECIMALS).toFixed(6)
+  } catch {
+    return raw
+  }
 }
 
 function readString(record: AnyRecord, ...keys: string[]): string | undefined {
@@ -177,7 +199,7 @@ function normalizeOpenOrder(raw: AnyRecord): TradeLimitOrder {
     subaccountId: readString(raw, 'subaccountId', 'subaccount_id')
       ?? readString(nestedOrder, 'subaccountId', 'subaccount_id'),
     side,
-    price: readString(raw, 'price') ?? readString(nestedOrder, 'price') ?? '0',
+    price: fromChainPrice(readString(raw, 'price') ?? readString(nestedOrder, 'price') ?? '0'),
     quantity: readString(raw, 'quantity') ?? readString(nestedOrder, 'quantity') ?? '0',
     fillable: readString(raw, 'fillable', 'fillableQuantity', 'unfilledQuantity')
       ?? readString(nestedOrder, 'fillable', 'fillableQuantity', 'unfilledQuantity')
@@ -233,10 +255,16 @@ function resolveLimitOrderType(side: 'buy' | 'sell', postOnly = false): number {
 export const orders = {
   async tradeLimitOpen(config: Config, params: TradeLimitOpenParams): Promise<TradeLimitOpenResult> {
     const market = await markets.resolve(config, params.symbol)
+    const reduceOnly = params.reduceOnly ?? false
     const subaccountIndex = params.subaccountIndex ?? 0
     const price = parsePositiveDecimal('price', params.price)
     const quantity = parsePositiveDecimal('quantity', params.quantity)
-    const margin = parsePositiveDecimal('margin', params.margin)
+    const margin = reduceOnly
+      ? parseNonNegativeDecimal('margin', params.margin)
+      : parsePositiveDecimal('margin', params.margin)
+    if (reduceOnly && !margin.eq(0)) {
+      throw new InvalidOrderParameters('margin must be "0" when reduceOnly is true')
+    }
     const tickSize = new Decimal(market.tickSize)
     const qtyTickSize = new Decimal(market.minQuantityTick)
 
@@ -262,7 +290,7 @@ export const orders = {
       quantity: chainQuantity,
       triggerPrice: '0',
       feeRecipient: params.address,
-      isReduceOnly: params.reduceOnly ?? false,
+      isReduceOnly: reduceOnly,
     }
 
     const msg = MsgCreateDerivativeLimitOrder.fromJSON(msgPayload as never)
@@ -288,7 +316,7 @@ export const orders = {
       price: params.price,
       quantity: params.quantity,
       margin: params.margin,
-      reduceOnly: params.reduceOnly ?? false,
+      reduceOnly,
       postOnly: params.postOnly ?? false,
     }
   },

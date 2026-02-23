@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { orders } from './index.js'
 import { testConfig, mockMarket } from '../test-utils/index.js'
 import { BroadcastFailed, InvalidOrderStatesQuery, InvalidOrderParameters } from '../errors/index.js'
+import { MsgCreateDerivativeLimitOrder } from '@injectivelabs/sdk-ts'
 
 vi.mock('../markets/index.js', () => ({
   markets: {
@@ -45,6 +46,7 @@ const mockedResolve = vi.mocked(markets.resolve)
 const mockedUnlock = vi.mocked(wallets.unlock)
 const mockedCreateClient = vi.mocked(createClient)
 const mockedCreateBroadcaster = vi.mocked(createBroadcaster)
+const mockedMsgCreateDerivativeLimitOrder = vi.mocked(MsgCreateDerivativeLimitOrder.fromJSON)
 
 describe('orders.tradeLimitOpen', () => {
   beforeEach(() => {
@@ -94,6 +96,67 @@ describe('orders.tradeLimitOpen', () => {
       })
     ).rejects.toThrow(BroadcastFailed)
   })
+
+  it('allows reduce-only limit orders with zero margin', async () => {
+    mockedResolve.mockResolvedValue(mockMarket())
+    mockedUnlock.mockReturnValue('0x' + 'f'.repeat(64))
+    mockedCreateBroadcaster.mockReturnValue({
+      broadcast: vi.fn().mockResolvedValue({ txHash: 'C'.repeat(64) }),
+    } as any)
+
+    const result = await orders.tradeLimitOpen(testConfig(), {
+      address: 'inj1' + 'a'.repeat(38),
+      password: 'secret-pw',
+      symbol: 'BTC',
+      side: 'sell',
+      price: '33000',
+      quantity: '0.01',
+      margin: '0',
+      reduceOnly: true,
+    })
+
+    expect(result.reduceOnly).toBe(true)
+    expect(result.margin).toBe('0')
+    expect(mockedMsgCreateDerivativeLimitOrder).toHaveBeenCalledWith(
+      expect.objectContaining({
+        margin: '0',
+        isReduceOnly: true,
+      })
+    )
+  })
+
+  it('rejects reduce-only limit orders with non-zero margin', async () => {
+    mockedResolve.mockResolvedValue(mockMarket())
+
+    await expect(
+      orders.tradeLimitOpen(testConfig(), {
+        address: 'inj1' + 'a'.repeat(38),
+        password: 'secret-pw',
+        symbol: 'BTC',
+        side: 'sell',
+        price: '33000',
+        quantity: '0.01',
+        margin: '10',
+        reduceOnly: true,
+      })
+    ).rejects.toThrow(new InvalidOrderParameters('margin must be "0" when reduceOnly is true'))
+  })
+
+  it('rejects non-reduce-only limit orders with zero margin', async () => {
+    mockedResolve.mockResolvedValue(mockMarket())
+
+    await expect(
+      orders.tradeLimitOpen(testConfig(), {
+        address: 'inj1' + 'a'.repeat(38),
+        password: 'secret-pw',
+        symbol: 'BTC',
+        side: 'buy',
+        price: '32000',
+        quantity: '0.01',
+        margin: '0',
+      })
+    ).rejects.toThrow(new InvalidOrderParameters('margin must be greater than zero'))
+  })
 })
 
 describe('orders.tradeLimitOrders', () => {
@@ -128,6 +191,9 @@ describe('orders.tradeLimitOrders', () => {
     expect(result).toHaveLength(1)
     expect(result[0]!.orderHash).toMatch(/^0x/)
     expect(result[0]!.side).toBe('buy')
+    expect(result[0]!.price).toBe('32000.000000')
+    expect(result[0]!.quantity).toBe('0.01')
+    expect(result[0]!.fillable).toBe('0.01')
   })
 })
 
