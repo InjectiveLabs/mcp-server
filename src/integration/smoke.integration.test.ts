@@ -25,7 +25,8 @@ import { wallets } from '../wallets/index.js'
 import { markets } from '../markets/index.js'
 import { accounts } from '../accounts/index.js'
 import { trading } from '../trading/index.js'
-import { MarketNotFound, NoPriceAvailable, WalletNotFound, WrongPassword, NoPositionFound } from '../errors/index.js'
+import { orders } from '../orders/index.js'
+import { MarketNotFound, NoPriceAvailable, WalletNotFound, WrongPassword, NoPositionFound, InvalidOrderStatesQuery } from '../errors/index.js'
 import { getTestPrivateKey, getTestNetwork, INJ_ADDRESS_RE, TX_HASH_RE } from '../test-utils/index.js'
 
 // ─── Setup ───────────────────────────────────────────────────────────────────
@@ -72,11 +73,27 @@ describe('client (integration)', () => {
     expect(client.derivativesApi).toBeTruthy()
     expect(client.oracleApi).toBeTruthy()
     expect(client.portfolioApi).toBeTruthy()
+    expect(client).toHaveProperty('accountApi')
   })
 
   it('withRetry resolves on successful call', async () => {
     const result = await withRetry(() => Promise.resolve('ok'))
     expect(result).toBe('ok')
+  })
+})
+
+// ─── Limit Orders (read-only portions) ──────────────────────────────────────
+
+describe('limit orders read-only (integration)', () => {
+  it('tradeLimitOrders returns an array (may be empty)', async () => {
+    const list = await orders.tradeLimitOrders(config, { address, symbol: 'BTC' })
+    expect(Array.isArray(list)).toBe(true)
+  })
+
+  it('tradeLimitStates validates non-empty hashes', async () => {
+    await expect(
+      orders.tradeLimitStates(config, { derivativeOrderHashes: [] })
+    ).rejects.toThrow(InvalidOrderStatesQuery)
   })
 })
 
@@ -299,7 +316,7 @@ describe('accounts (integration)', () => {
       expect(Number(pos.entryPrice)).toBeGreaterThan(0)
       expect(Number(pos.markPrice)).toBeGreaterThan(0)
 
-      console.log(`     ${pos.symbol} ${pos.side}: qty=${pos.quantity}, entry=${pos.entryPrice}, mark=${pos.markPrice}, pnl=${pos.pnl}`)
+      console.log(`     ${pos.symbol} ${pos.side}: qty=${pos.quantity}, entry=${pos.entryPrice}, mark=${pos.markPrice}, pnl=${pos.unrealizedPnl}`)
     }
   })
 
@@ -477,6 +494,50 @@ describe.skipIf(!ALLOW_TRADES)('trade execution (integration)', () => {
   }, 60000)
 })
 
+describe.skipIf(!ALLOW_TRADES)('limit order execution (integration)', () => {
+  it('opens and closes a small limit order by orderHash', async () => {
+    console.log(`\n  ⚠️ EXECUTING REAL LIMIT ORDER FLOW: ${TRADE_SYMBOL}`)
+
+    const market = await markets.resolve(config, TRADE_SYMBOL)
+    const oraclePrice = await markets.getPrice(config, market.marketId)
+    const quantity = new Decimal(market.minQuantityTick)
+    const limitPrice = oraclePrice.mul(0.95)
+    const margin = limitPrice.mul(quantity).mul(0.2) // conservative > IMR for most perps
+    const beforeOrders = await orders.tradeLimitOrders(config, {
+      address,
+      symbol: TRADE_SYMBOL,
+    })
+    const beforeHashes = new Set(beforeOrders.map(o => o.orderHash))
+
+    const openResult = await orders.tradeLimitOpen(config, {
+      address,
+      password: TEST_PASSWORD,
+      symbol: TRADE_SYMBOL,
+      side: 'buy',
+      price: limitPrice.toFixed(6),
+      quantity: quantity.toFixed(18).replace(/\.?0+$/, ''),
+      margin: margin.toFixed(6),
+      postOnly: true,
+    })
+
+    expect(openResult.txHash).toMatch(TX_HASH_RE)
+    const afterOrders = await orders.tradeLimitOrders(config, {
+      address,
+      symbol: TRADE_SYMBOL,
+    })
+    const createdOrder = afterOrders.find(o => !beforeHashes.has(o.orderHash))
+    expect(createdOrder?.orderHash).toBeTruthy()
+
+    const closeResult = await orders.tradeLimitClose(config, {
+      address,
+      password: TEST_PASSWORD,
+      symbol: TRADE_SYMBOL,
+      orderHash: createdOrder!.orderHash,
+    })
+    expect(closeResult.txHash).toMatch(TX_HASH_RE)
+  }, 60000)
+})
+
 // ─── Full E2E flow (gated) ──────────────────────────────────────────────────
 
 describe.skipIf(!ALLOW_TRADES)('full E2E flow (integration)', () => {
@@ -529,7 +590,7 @@ describe.skipIf(!ALLOW_TRADES)('full E2E flow (integration)', () => {
       p => p.symbol.toUpperCase() === tradeMarket!.symbol.toUpperCase() && p.side === 'long'
     )
     expect(ourPosition).toBeDefined()
-    console.log(`  📈 Position confirmed: qty=${ourPosition!.quantity}, pnl=${ourPosition!.pnl}`)
+    console.log(`  📈 Position confirmed: qty=${ourPosition!.quantity}, pnl=${ourPosition!.unrealizedPnl}`)
 
     // 8. Close position
     const closeResult = await trading.close(config, {

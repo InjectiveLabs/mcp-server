@@ -398,3 +398,132 @@ describe('evm_broadcast parameter validation', () => {
     expect(result.success).toBe(false)
   })
 })
+
+describe('trade_limit_open parameter validation', () => {
+  const schema = z.object({
+    address: injAddress,
+    password: z.string(),
+    symbol: z.string(),
+    side: z.enum(['buy', 'sell']),
+    price: numericString,
+    quantity: numericString,
+    margin: numericString,
+    subaccountIndex: z.number().int().min(0).max(255).optional(),
+    reduceOnly: z.boolean().optional(),
+    postOnly: z.boolean().optional(),
+  })
+
+  it('accepts valid params', () => {
+    const result = schema.safeParse({
+      address: 'inj1' + 'a'.repeat(38),
+      password: 'pw',
+      symbol: 'BTC',
+      side: 'buy',
+      price: '32000',
+      quantity: '0.01',
+      margin: '20',
+      subaccountIndex: 0,
+      postOnly: true,
+    })
+    expect(result.success).toBe(true)
+  })
+
+  it('rejects invalid side', () => {
+    const result = schema.safeParse({
+      address: 'inj1' + 'a'.repeat(38),
+      password: 'pw',
+      symbol: 'BTC',
+      side: 'long',
+      price: '32000',
+      quantity: '0.01',
+      margin: '20',
+    })
+    expect(result.success).toBe(false)
+  })
+
+  it('rejects negative price', () => {
+    const result = schema.safeParse({
+      address: 'inj1' + 'a'.repeat(38),
+      password: 'pw',
+      symbol: 'BTC',
+      side: 'buy',
+      price: '-1',
+      quantity: '0.01',
+      margin: '20',
+    })
+    expect(result.success).toBe(false)
+  })
+})
+
+describe('trade_limit_orders parameter validation', () => {
+  const schema = z.object({
+    address: injAddress,
+    symbol: z.string().optional(),
+    subaccountIndex: z.number().int().min(0).max(255).optional(),
+  })
+
+  it('accepts address-only request', () => {
+    const result = schema.safeParse({
+      address: 'inj1' + 'a'.repeat(38),
+    })
+    expect(result.success).toBe(true)
+  })
+
+  it('accepts symbol and subaccount', () => {
+    const result = schema.safeParse({
+      address: 'inj1' + 'a'.repeat(38),
+      symbol: 'ETH',
+      subaccountIndex: 1,
+    })
+    expect(result.success).toBe(true)
+  })
+})
+
+describe('trade_limit_close parameter validation', () => {
+  const schema = z.object({
+    address: injAddress,
+    password: z.string(),
+    symbol: z.string(),
+    subaccountIndex: z.number().int().min(0).max(255).optional(),
+    orderHash: z.string().min(1),
+  })
+
+  it('accepts close by orderHash', () => {
+    const result = schema.safeParse({
+      address: 'inj1' + 'a'.repeat(38),
+      password: 'pw',
+      symbol: 'BTC',
+      orderHash: '0x' + 'a'.repeat(64),
+    })
+    expect(result.success).toBe(true)
+  })
+
+  it('rejects when orderHash is missing', () => {
+    const result = schema.safeParse({
+      address: 'inj1' + 'a'.repeat(38),
+      password: 'pw',
+      symbol: 'BTC',
+    })
+    expect(result.success).toBe(false)
+  })
+})
+
+describe('trade_limit_states parameter validation', () => {
+  const schema = z.object({
+    derivativeOrderHashes: z.array(z.string().min(1)).min(1),
+  })
+
+  it('accepts non-empty hash list', () => {
+    const result = schema.safeParse({
+      derivativeOrderHashes: ['0x' + 'a'.repeat(64)],
+    })
+    expect(result.success).toBe(true)
+  })
+
+  it('rejects empty hash list', () => {
+    const result = schema.safeParse({
+      derivativeOrderHashes: [],
+    })
+    expect(result.success).toBe(false)
+  })
+})
