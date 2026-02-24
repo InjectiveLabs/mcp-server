@@ -11,3 +11,5 @@ coverage/
 *.log
 ai_plan.md
 ai_comm.md
+*.swp
+*.swo
