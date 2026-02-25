@@ -33,4 +33,7 @@ export type { DeBridgeQuoteParams, DeBridgeQuoteResult, DeBridgeSendParams, DeBr
 export { evm } from './evm/index.js'
 export type { EvmAccount, BroadcastEvmTxParams, BroadcastEvmTxResult } from './evm/index.js'
 
+export { eip712 } from './evm/eip712.js'
+export type { Eip712OpenParams, Eip712OpenResult, Eip712CloseParams, Eip712CloseResult } from './evm/eip712.js'
+
 export * from './errors/index.js'

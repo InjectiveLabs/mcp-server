@@ -23,6 +23,7 @@ import { transfers } from '../transfers/index.js'
 import { bridges } from '../bridges/index.js'
 import { debridge } from '../bridges/debridge.js'
 import { evm } from '../evm/index.js'
+import { eip712 } from '../evm/eip712.js'
 
 const injAddress = z.string().regex(/^inj1[a-z0-9]{38}$/, 'Must be a valid inj1... address (42 chars)')
 const numericString = z.string().regex(/^\d+(\.\d+)?$/, 'Must be a positive numeric string')
@@ -609,6 +610,60 @@ server.tool(
       chainId,
       memo,
     })
+    return {
+      content: [{
+        type: 'text',
+        text: JSON.stringify(result, null, 2),
+      }],
+    }
+  },
+)
+
+// ─── EIP-712 Trading Tools ────────────────────────────────────────────────────
+
+server.tool(
+  'trade_open_eip712',
+  'Open a perpetual futures position using EIP-712 Ethereum-style signing. ' +
+  'Use this instead of trade_open if your wallet key is an Ethereum private key ' +
+  '(e.g. exported from MetaMask or a hardware wallet). ' +
+  'IMPORTANT: Real on-chain transaction with real funds. Confirm parameters with the user first.',
+  {
+    address: injAddress.describe('Sender inj1... address (must be in local keystore).'),
+    password: z.string().describe('Keystore password to decrypt the private key.'),
+    symbol: z.string().min(1).describe('Market ticker, e.g. "BTC", "ETH", "INJ".'),
+    side: z.enum(['long', 'short']).describe('Position direction.'),
+    amount: numericString.describe('Notional size in USDT, e.g. "100" = $100.'),
+    leverage: z.number().int().min(1).max(50).optional()
+      .describe('Leverage multiplier (default: 10).'),
+    slippage: z.number().min(0).max(0.5).optional()
+      .describe('Slippage tolerance as a fraction (default: 0.01 = 1%).'),
+  },
+  async ({ address, password, symbol, side, amount, leverage, slippage }) => {
+    const result = await eip712.open(config, { address, password, symbol, side, amount, leverage, slippage })
+    return {
+      content: [{
+        type: 'text',
+        text: JSON.stringify(result, null, 2),
+      }],
+    }
+  },
+)
+
+server.tool(
+  'trade_close_eip712',
+  'Close an open perpetual position using EIP-712 Ethereum-style signing. ' +
+  'Use this instead of trade_close if your wallet key is an Ethereum private key ' +
+  '(e.g. exported from MetaMask or a hardware wallet). ' +
+  'IMPORTANT: Real on-chain transaction. Confirm with the user before calling.',
+  {
+    address: injAddress.describe('Sender inj1... address (must be in local keystore).'),
+    password: z.string().describe('Keystore password to decrypt the private key.'),
+    symbol: z.string().min(1).describe('Market ticker of the position to close, e.g. "BTC".'),
+    slippage: z.number().min(0).max(0.5).optional()
+      .describe('Slippage tolerance as a fraction (default: 0.05 = 5%).'),
+  },
+  async ({ address, password, symbol, slippage }) => {
+    const result = await eip712.close(config, { address, password, symbol, slippage })
     return {
       content: [{
         type: 'text',
