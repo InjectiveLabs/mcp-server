@@ -24,6 +24,7 @@ import { bridges } from '../bridges/index.js'
 import { debridge } from '../bridges/debridge.js'
 import { evm } from '../evm/index.js'
 import { eip712 } from '../evm/eip712.js'
+import { authz, TRADING_MSG_TYPES } from '../authz/index.js'
 
 const injAddress = z.string().regex(/^inj1[a-z0-9]{38}$/, 'Must be a valid inj1... address (42 chars)')
 const numericString = z.string().regex(/^\d+(\.\d+)?$/, 'Must be a positive numeric string')
@@ -664,6 +665,61 @@ server.tool(
   },
   async ({ address, password, symbol, slippage }) => {
     const result = await eip712.close(config, { address, password, symbol, slippage })
+    return {
+      content: [{
+        type: 'text',
+        text: JSON.stringify(result, null, 2),
+      }],
+    }
+  },
+)
+
+// ─── AuthZ Tools ─────────────────────────────────────────────────────────────
+
+server.tool(
+  'authz_grant',
+  'Grant another Injective address permission to execute trading messages on your behalf ' +
+  '(Cosmos SDK AuthZ). After granting, the grantee can submit trades using authz_exec-style ' +
+  'flows without requiring your signature per transaction. ' +
+  'IMPORTANT: This is a real on-chain transaction. Confirm parameters with the user first. ' +
+  `Default message types covered: ${TRADING_MSG_TYPES.join(', ')}`,
+  {
+    granterAddress: injAddress.describe('Your inj1... address (granter — must be in local keystore).'),
+    password: z.string().describe('Keystore password to decrypt the granter private key.'),
+    granteeAddress: injAddress.describe('The inj1... address being granted permissions (grantee).'),
+    msgTypes: z.array(z.string().min(1)).optional()
+      .describe('Message type URLs to grant. Omit to use all default trading types.'),
+    expirySeconds: z.number().int().positive().optional()
+      .describe('Grant validity in seconds from now. Default: 2592000 (30 days).'),
+  },
+  async ({ granterAddress, password, granteeAddress, msgTypes, expirySeconds }) => {
+    const result = await authz.grant(config, {
+      granterAddress, password, granteeAddress, msgTypes, expirySeconds,
+    })
+    return {
+      content: [{
+        type: 'text',
+        text: JSON.stringify(result, null, 2),
+      }],
+    }
+  },
+)
+
+server.tool(
+  'authz_revoke',
+  'Revoke previously granted trading permissions from a grantee address. ' +
+  'IMPORTANT: This is a real on-chain transaction. Confirm parameters with the user first.',
+  {
+    granterAddress: injAddress.describe('Your inj1... address (granter — must be in local keystore).'),
+    password: z.string().describe('Keystore password to decrypt the granter private key.'),
+    granteeAddress: injAddress.describe('The inj1... address whose permissions will be revoked.'),
+    msgTypes: z.array(z.string().min(1)).optional()
+      .describe('Message type URLs to revoke. Omit to revoke all default trading types.'),
+  },
+  async ({ granterAddress, password, granteeAddress, msgTypes }) => {
+    const result = await authz.revoke(config, {
+      granterAddress, password, granteeAddress, msgTypes,
+    })
     return {
       content: [{
         type: 'text',
