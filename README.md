@@ -28,8 +28,10 @@ Connect it to Claude Desktop or Claude Code and trade with natural language.
 ### Perpetual Trading
 | Tool | Description |
 |---|---|
-| `trade_open` | Open a position with a market order. |
-| `trade_close` | Close an open position with a market order. |
+| `trade_open` | Open a position with a market order (Cosmos signing). |
+| `trade_close` | Close an open position with a market order (Cosmos signing). |
+| `trade_open_eip712` | Open a position using EIP-712 Ethereum signing (MetaMask-compatible keys). |
+| `trade_close_eip712` | Close a position using EIP-712 Ethereum signing (MetaMask-compatible keys). |
 | `trade_limit_open` | Open a limit order. |
 | `trade_limit_orders` | List open limit orders. |
 | `trade_limit_close` | Cancel a limit order by `orderHash`. |
@@ -147,7 +149,8 @@ MCP Server  (src/mcp/server.ts)
        ├── wallets/      Wallet generation and management
        ├── markets/      Market data with in-memory caching
        ├── accounts/     Balances and positions
-       ├── trading/      Perpetual market orders
+       ├── trading/      Perpetual market orders (Cosmos signing)
+       ├── evm/eip712    Perpetual market orders (EIP-712 signing)
        ├── orders/       Perpetual limit order lifecycle
        ├── transfers/    Bank transfers and subaccount moves
        ├── bridges/      Peggy + deBridge cross-chain
