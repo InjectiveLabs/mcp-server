@@ -661,7 +661,7 @@ server.tool(
 
 server.tool(
   'evm_broadcast',
-  'Broadcast a raw EVM transaction on Injective inEVM. ' +
+  'Broadcast a raw EVM transaction on Injective EVM. ' +
   'IMPORTANT: Real on-chain transaction with real funds. Confirm parameters first.',
   {
     address: injAddress.describe('Sender inj1... address (must be in local keystore).'),
