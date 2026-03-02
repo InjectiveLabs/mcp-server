@@ -177,4 +177,8 @@ export type {
   DeBridgeQuoteResult,
   DeBridgeSendParams,
   DeBridgeSendResult,
+  DeBridgeInboundQuoteParams,
+  DeBridgeInboundQuoteResult,
+  DeBridgeInboundSendParams,
+  DeBridgeInboundSendResult,
 } from './debridge.js'

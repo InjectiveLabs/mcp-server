@@ -8,7 +8,7 @@ import {
   getEthereumAddress,
   getInjectiveAddress,
 } from '@injectivelabs/sdk-ts'
-import { Interface, Wallet, getBytes, isAddress } from 'ethers'
+import { Interface, JsonRpcProvider, Wallet, getBytes, isAddress } from 'ethers'
 import { Config } from '../config/index.js'
 import { createClient } from '../client/index.js'
 import { EvmTxFailed } from '../errors/index.js'
@@ -276,8 +276,78 @@ export function ethAddressToInj(ethAddress: string): string {
   return getInjectiveAddress(ethAddress)
 }
 
+// ─── External EVM broadcast (non-Injective chains) ───────────────────────────
+
+export interface ExternalBroadcastEvmTxParams {
+  /** JSON-RPC endpoint of the external chain (e.g. Arbitrum). */
+  rpcUrl: string
+  /** Hex private key of the signer. */
+  privateKeyHex: string
+  /** Destination contract address. */
+  to: string
+  /** ABI-encoded calldata (hex). */
+  data?: string
+  /** Native value to send in wei. */
+  value?: string
+  /** Gas limit override. Estimated automatically if omitted. */
+  gasLimit?: string | number | bigint
+}
+
+export interface ExternalBroadcastEvmTxResult {
+  txHash: string
+  from: string
+  nonce: number
+  gasLimit: string
+  value: string
+}
+
+/**
+ * Sign and broadcast a plain EVM transaction on any external JSON-RPC chain
+ * (e.g. Arbitrum, Ethereum, Base).  This does NOT use Injective's MsgEthereumTx
+ * wrapper — it broadcasts directly via `eth_sendRawTransaction`.
+ */
+export async function broadcastExternalEvmTx(
+  params: ExternalBroadcastEvmTxParams,
+): Promise<ExternalBroadcastEvmTxResult> {
+  const provider = new JsonRpcProvider(params.rpcUrl)
+  const wallet = new Wallet(normalizePrivateKey(params.privateKeyHex), provider)
+
+  const to = params.to
+  if (!isAddress(to)) {
+    throw new EvmTxFailed(`Invalid destination address: ${to}`)
+  }
+
+  const data = normalizeHexData(params.data)
+  const value = parseBigInt(params.value ?? '0', 'value', { min: 0n })
+
+  let gasLimit: bigint
+  if (params.gasLimit != null) {
+    gasLimit = parseBigInt(params.gasLimit, 'gasLimit', { min: 1n })
+  } else {
+    try {
+      const estimated = await provider.estimateGas({ to, data, value, from: wallet.address })
+      // Add 30% buffer on top of estimate.
+      gasLimit = (estimated * 130n) / 100n
+    } catch {
+      gasLimit = 500_000n
+    }
+  }
+
+  const txRequest = { to, data, value, gasLimit }
+  const txResponse = await wallet.sendTransaction(txRequest)
+
+  return {
+    txHash: txResponse.hash,
+    from: wallet.address,
+    nonce: txResponse.nonce,
+    gasLimit: gasLimit.toString(),
+    value: value.toString(),
+  }
+}
+
 export const evm = {
   broadcastEvmTx,
+  broadcastExternalEvmTx,
   getEvmAccount,
   getBaseFee,
   encodeErc20Transfer,

@@ -577,6 +577,86 @@ server.tool(
   },
 )
 
+server.tool(
+  'bridge_debridge_inbound_quote',
+  'Get a deBridge DLN quote for bridging tokens FROM an external chain (e.g. Arbitrum, Ethereum, Base) ' +
+  'INTO Injective. Read-only: no transaction is broadcast. ' +
+  'Example: USDC on Arbitrum → USDT on Injective EVM.',
+  {
+    srcChain: z.union([z.string(), z.number().int().positive()])
+      .describe('Source chain name or chain ID (e.g. "arbitrum", 42161, "base", 8453).'),
+    srcTokenAddress: z.string().regex(/^0x[0-9a-fA-F]{40}$/)
+      .describe('ERC20 token address on the source chain (e.g. USDC on Arbitrum: 0xaf88d065e77c8cc2239327c5edb3a432268e5831).'),
+    amount: numericString.describe('Human-readable amount to bridge (e.g. "10.5").'),
+    dstTokenAddress: z.string().regex(/^0x[0-9a-fA-F]{40}$/)
+      .describe('Destination ERC20 token address on Injective EVM (e.g. USDT: 0x88f7f2b685f9692caf8c478f5badf09ee9b1cc13).'),
+    recipient: z.string().min(1)
+      .describe('Recipient on Injective: bech32 inj1... address or 0x EVM address.'),
+  },
+  async ({ srcChain, srcTokenAddress, amount, dstTokenAddress, recipient }) => {
+    const result = await debridge.getQuoteInbound({
+      srcChain,
+      srcTokenAddress,
+      amount,
+      dstTokenAddress,
+      recipient,
+    })
+    return {
+      content: [{
+        type: 'text',
+        text: JSON.stringify(result, null, 2),
+      }],
+    }
+  },
+)
+
+server.tool(
+  'bridge_debridge_inbound_send',
+  'Bridge tokens FROM an external chain (e.g. Arbitrum) INTO Injective via deBridge DLN. ' +
+  'Uses the Injective wallet\'s private key to sign on the source chain (same secp256k1 key). ' +
+  'Steps: (1) ERC20 approve on source chain, (2) bridge tx on source chain → tokens arrive on Injective. ' +
+  'IMPORTANT: Real cross-chain transaction — irreversible once submitted. Confirm parameters first.',
+  {
+    address: injAddress.describe('Sender inj1... address (must be in local keystore). The same key is used on the source chain.'),
+    password: z.string().describe('Keystore password to decrypt the private key.'),
+    srcChain: z.union([z.string(), z.number().int().positive()])
+      .describe('Source chain name or chain ID (e.g. "arbitrum", 42161).'),
+    srcTokenAddress: z.string().regex(/^0x[0-9a-fA-F]{40}$/)
+      .describe('ERC20 token address on the source chain (e.g. USDC on Arbitrum).'),
+    amount: numericString.describe('Human-readable amount to bridge (e.g. "10.5").'),
+    dstTokenAddress: z.string().regex(/^0x[0-9a-fA-F]{40}$/)
+      .describe('Destination ERC20 token address on Injective EVM.'),
+    recipient: z.string().min(1)
+      .describe('Recipient on Injective: bech32 inj1... address or 0x EVM address.'),
+    rpcUrl: z.string().url().optional()
+      .describe('Optional RPC URL override for the source chain. Public endpoints are used by default.'),
+    srcAuthorityAddress: z.string().optional()
+      .describe('Optional source-chain authority address override. Defaults to sender EVM address.'),
+    dstAuthorityAddress: z.string().optional()
+      .describe('Optional Injective-side authority address override. Defaults to recipient EVM address.'),
+  },
+  async ({ address, password, srcChain, srcTokenAddress, amount, dstTokenAddress, recipient, rpcUrl, srcAuthorityAddress, dstAuthorityAddress }) => {
+    const result = await debridge.sendBridgeInbound({
+      address,
+      password,
+      srcChain,
+      srcTokenAddress,
+      amount,
+      dstTokenAddress,
+      recipient,
+      rpcUrl,
+      srcAuthorityAddress,
+      dstAuthorityAddress,
+    })
+    return {
+      content: [{
+        type: 'text',
+        text: JSON.stringify(result, null, 2),
+      }],
+    }
+  },
+)
+
 // ─── Generic EVM Tool ──────────────────────────────────────────────────────
 
 server.tool(

@@ -12,6 +12,17 @@ import {
   UnknownDecimals,
 } from '../errors/index.js'
 
+/** Public JSON-RPC endpoints for external source chains (inbound bridge). */
+export const EXTERNAL_CHAIN_RPC_URLS: Record<number, string> = {
+  1:       'https://eth.llamarpc.com',
+  56:      'https://bsc-dataseed1.binance.org',
+  137:     'https://polygon-rpc.com',
+  42161:   'https://arb1.arbitrum.io/rpc',
+  43114:   'https://api.avax.network/ext/bc/C/rpc',
+  8453:    'https://mainnet.base.org',
+  10:      'https://mainnet.optimism.io',
+}
+
 export const DEBRIDGE_API_BASE = 'https://dln.debridge.finance/v1.0'
 export const DEBRIDGE_INJECTIVE_CHAIN_ID = 100000029
 const DEBRIDGE_TIMEOUT_MS = 15_000
@@ -354,9 +365,226 @@ export async function sendBridge(config: Config, params: DeBridgeSendParams): Pr
   }
 }
 
+// ─── Inbound bridge (external chain → Injective) ─────────────────────────────
+
+export interface DeBridgeInboundQuoteParams {
+  /** Source chain name (e.g. "arbitrum") or numeric chain ID (e.g. 42161). */
+  srcChain: string | number
+  /** ERC20 token address on the source chain. */
+  srcTokenAddress: string
+  /** Human-readable amount of source token (e.g. "10.5"). */
+  amount: string
+  /** Destination ERC20 token address on Injective EVM. */
+  dstTokenAddress: string
+  /** Recipient address on Injective (bech32 inj1... or 0x EVM address). */
+  recipient: string
+}
+
+export interface DeBridgeInboundQuoteResult {
+  srcChainId: number
+  dstChainId: number
+  srcTokenAddress: string
+  srcAmount: string
+  srcAmountBase: string
+  dstTokenAddress: string
+  recipient: string
+  estimation: unknown
+  quote: Record<string, unknown>
+}
+
+export interface DeBridgeInboundSendParams extends DeBridgeInboundQuoteParams {
+  /** Injective wallet address (inj1...) whose private key signs on the source chain. */
+  address: string
+  /** Wallet password for key decryption. */
+  password: string
+  /** Optional override for the source chain RPC URL. */
+  rpcUrl?: string
+  /** Optional authority address override on the source chain. Defaults to sender EVM address. */
+  srcAuthorityAddress?: string
+  /** Optional authority address override on Injective. Defaults to recipient. */
+  dstAuthorityAddress?: string
+}
+
+export interface DeBridgeInboundSendResult extends DeBridgeInboundQuoteResult {
+  txHash: string
+  orderId: string
+  approvalTxHash?: string
+}
+
+/** Resolve a recipient to an EVM-compatible 0x address (handles inj1... bech32 inputs). */
+function resolveRecipientToEvm(recipient: string): string {
+  if (recipient.startsWith('inj1')) {
+    return injAddressToEth(recipient)
+  }
+  if (!isAddress(recipient)) {
+    throw new DeBridgeApiError(`Invalid recipient address: "${recipient}"`)
+  }
+  return recipient
+}
+
+function buildInboundCreateTxUrl(params: {
+  srcChainId: number
+  srcChainTokenIn: string
+  srcChainTokenInAmount: string
+  dstChainTokenOut: string
+  dstChainTokenOutRecipient: string
+  srcChainOrderAuthorityAddress?: string
+  dstChainOrderAuthorityAddress?: string
+}): string {
+  const base = DEBRIDGE_API_BASE.replace(/\/+$/, '')
+  const query = toQueryString({
+    srcChainId: params.srcChainId,
+    srcChainTokenIn: params.srcChainTokenIn,
+    srcChainTokenInAmount: params.srcChainTokenInAmount,
+    dstChainId: DEBRIDGE_INJECTIVE_CHAIN_ID,
+    dstChainTokenOut: params.dstChainTokenOut,
+    dstChainTokenOutRecipient: params.dstChainTokenOutRecipient,
+    srcChainOrderAuthorityAddress: params.srcChainOrderAuthorityAddress,
+    dstChainOrderAuthorityAddress: params.dstChainOrderAuthorityAddress,
+  })
+  return `${base}/dln/order/create-tx?${query}`
+}
+
+/**
+ * Fetch a quote for bridging from an external chain → Injective.
+ * Read-only — no transaction is built.
+ */
+export async function getQuoteInbound(
+  params: DeBridgeInboundQuoteParams,
+): Promise<DeBridgeInboundQuoteResult> {
+  const srcChainId = resolveDstChainId(params.srcChain)  // reuse resolver
+  const amount = validateAmount(params.amount)
+
+  if (!isAddress(params.srcTokenAddress)) {
+    throw new DeBridgeApiError(`Invalid srcTokenAddress: "${params.srcTokenAddress}"`)
+  }
+  if (!isAddress(params.dstTokenAddress)) {
+    throw new DeBridgeApiError(`Invalid dstTokenAddress: "${params.dstTokenAddress}"`)
+  }
+  const recipientEvm = resolveRecipientToEvm(params.recipient)
+
+  // USDC on Arbitrum has 6 decimals; generalise by detecting from the API response.
+  // For the quote we need base units — assume 6 decimals if unknown (USDC/USDT standard).
+  // The estimation response confirms decimals so users can verify.
+  const srcAmountBase = toBaseUnits(amount, 6).toString()
+
+  const url = buildInboundCreateTxUrl({
+    srcChainId,
+    srcChainTokenIn: params.srcTokenAddress,
+    srcChainTokenInAmount: srcAmountBase,
+    dstChainTokenOut: params.dstTokenAddress,
+    dstChainTokenOutRecipient: recipientEvm,
+  })
+  const response = await fetchDeBridgeApi(url)
+
+  return {
+    srcChainId,
+    dstChainId: DEBRIDGE_INJECTIVE_CHAIN_ID,
+    srcTokenAddress: params.srcTokenAddress,
+    srcAmount: params.amount,
+    srcAmountBase,
+    dstTokenAddress: params.dstTokenAddress,
+    recipient: params.recipient,
+    estimation: pickEstimation(response),
+    quote: response,
+  }
+}
+
+/**
+ * Bridge tokens from an external chain (e.g. Arbitrum) → Injective via deBridge DLN.
+ *
+ * Steps:
+ *  1. Fetch order calldata from deBridge API (with authority addresses).
+ *  2. Approve ERC20 allowance on the source chain.
+ *  3. Execute the bridge transaction on the source chain.
+ */
+export async function sendBridgeInbound(
+  params: DeBridgeInboundSendParams,
+): Promise<DeBridgeInboundSendResult> {
+  const srcChainId = resolveDstChainId(params.srcChain)
+  const amount = validateAmount(params.amount)
+
+  if (!isAddress(params.srcTokenAddress)) {
+    throw new DeBridgeApiError(`Invalid srcTokenAddress: "${params.srcTokenAddress}"`)
+  }
+  if (!isAddress(params.dstTokenAddress)) {
+    throw new DeBridgeApiError(`Invalid dstTokenAddress: "${params.dstTokenAddress}"`)
+  }
+
+  const privateKeyHex = wallets.unlock(params.address, params.password)
+  const senderEvmAddress = injAddressToEth(params.address)
+  const recipientEvm = resolveRecipientToEvm(params.recipient)
+  const srcAuthorityAddress = params.srcAuthorityAddress ?? senderEvmAddress
+  const dstAuthorityAddress = params.dstAuthorityAddress ?? recipientEvm
+
+  // USDC/USDT use 6 decimals — read from estimation if available.
+  const srcAmountBase = toBaseUnits(amount, 6).toString()
+
+  // 1. Fetch the full order calldata from deBridge.
+  const url = buildInboundCreateTxUrl({
+    srcChainId,
+    srcChainTokenIn: params.srcTokenAddress,
+    srcChainTokenInAmount: srcAmountBase,
+    dstChainTokenOut: params.dstTokenAddress,
+    dstChainTokenOutRecipient: recipientEvm,
+    srcChainOrderAuthorityAddress: srcAuthorityAddress,
+    dstChainOrderAuthorityAddress: dstAuthorityAddress,
+  })
+  const response = await fetchDeBridgeApi(url)
+  const { tx, orderId } = parseOrderResponse(response)
+
+  if (!isAddress(tx.to)) {
+    throw new DeBridgeApiError(`Invalid tx.to from deBridge: ${tx.to}`)
+  }
+
+  const rpcUrl = params.rpcUrl ?? EXTERNAL_CHAIN_RPC_URLS[srcChainId]
+  if (!rpcUrl) {
+    throw new DeBridgeApiError(
+      `No RPC URL configured for chain ${srcChainId}. Provide rpcUrl param.`
+    )
+  }
+
+  // 2. Approve ERC20 allowance to the deBridge execution contract.
+  const approveData = encodeErc20Approve(tx.to, srcAmountBase)
+  const approvalResult = await evm.broadcastExternalEvmTx({
+    rpcUrl,
+    privateKeyHex,
+    to: params.srcTokenAddress,
+    data: approveData,
+    value: '0',
+  })
+  const approvalTxHash = approvalResult.txHash
+
+  // 3. Execute the bridge transaction (with ETH fix fee as value).
+  const bridgeResult = await evm.broadcastExternalEvmTx({
+    rpcUrl,
+    privateKeyHex,
+    to: tx.to,
+    data: tx.data,
+    value: tx.value,
+  })
+
+  return {
+    txHash: bridgeResult.txHash,
+    approvalTxHash,
+    orderId,
+    srcChainId,
+    dstChainId: DEBRIDGE_INJECTIVE_CHAIN_ID,
+    srcTokenAddress: params.srcTokenAddress,
+    srcAmount: params.amount,
+    srcAmountBase,
+    dstTokenAddress: params.dstTokenAddress,
+    recipient: params.recipient,
+    estimation: pickEstimation(response),
+    quote: response,
+  }
+}
+
 export const debridge = {
   resolveDstChainId,
   fetchDeBridgeApi,
   getQuote,
   sendBridge,
+  getQuoteInbound,
+  sendBridgeInbound,
 }
