@@ -54,7 +54,7 @@ Connect it to Claude Desktop or Claude Code and trade with natural language.
 ### EVM
 | Tool | Description |
 |---|---|
-| `evm_broadcast` | Broadcast a raw EVM transaction on Injective inEVM. |
+| `evm_broadcast` | Broadcast a raw EVM transaction on Injective EVM. |
 
 ---
 
@@ -154,7 +154,7 @@ MCP Server  (src/mcp/server.ts)
        ├── orders/       Perpetual limit order lifecycle
        ├── transfers/    Bank transfers and subaccount moves
        ├── bridges/      Peggy + deBridge cross-chain
-       └── evm/          Generic Injective inEVM tx broadcasting
+       └── evm/          Generic Injective EVM tx broadcasting
               │
               ▼
      Injective Chain
@@ -194,7 +194,7 @@ All Injective denom formats are supported:
 | Peggy (bridged ERC-20) | `peggy0x...` | USDT |
 | IBC | `ibc/...` | ATOM |
 | TokenFactory | `factory/inj.../name` | — |
-| MTS / inEVM ERC-20 | `erc20:0x...` | inEVM tokens |
+| MTS / Injective EVM ERC-20 | `erc20:0x...` | Injective EVM tokens |
 
 Token metadata (symbol, decimals) is resolved automatically against on-chain registry and cached for the lifetime of the server process.
 
