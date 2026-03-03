@@ -141,3 +141,29 @@ export class InvalidOrderParameters extends Error {
     this.name = 'InvalidOrderParameters'
   }
 }
+
+// ─── Payment Errors ─────────────────────────────────────────────────────────
+
+export class PaymentRequired extends Error {
+  readonly code = 'PAYMENT_REQUIRED'
+  constructor(toolName: string, amount: string) {
+    super(`Tool "${toolName}" requires payment of ${amount} before execution`)
+    this.name = 'PaymentRequired'
+  }
+}
+
+export class PaymentVerificationFailed extends Error {
+  readonly code = 'PAYMENT_VERIFICATION_FAILED'
+  constructor(reason: string) {
+    super(`Payment verification failed: ${reason}`)
+    this.name = 'PaymentVerificationFailed'
+  }
+}
+
+export class PaymentExpired extends Error {
+  readonly code = 'PAYMENT_EXPIRED'
+  constructor(paymentId: string) {
+    super(`Payment challenge expired: ${paymentId}`)
+    this.name = 'PaymentExpired'
+  }
+}

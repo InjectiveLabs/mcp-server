@@ -25,9 +25,11 @@ import { debridge } from '../bridges/debridge.js'
 import { evm } from '../evm/index.js'
 import { eip712 } from '../evm/eip712.js'
 import { authz, TRADING_MSG_TYPES } from '../authz/index.js'
+import { loadPaymentGateConfig, createPaymentGatedHandler, retrieveChallenge, verifyPayment } from '../payments/index.js'
 
 const injAddress = z.string().regex(/^inj1[a-z0-9]{38}$/, 'Must be a valid inj1... address (42 chars)')
 const numericString = z.string().regex(/^\d+(\.\d+)?$/, 'Must be a positive numeric string')
+const paymentGateConfig = loadPaymentGateConfig()
 
 const server = new McpServer({
   name: 'injective-agent',
@@ -38,6 +40,31 @@ const server = new McpServer({
 
 const NETWORK = validateNetwork(process.env['INJECTIVE_NETWORK'] ?? 'testnet')
 const config = createConfig(NETWORK)
+
+/**
+ * Helper to register a tool with optional payment gating.
+ * If the gate is enabled and the tool isn't in the free list,
+ * the handler is wrapped with the payment challenge/verify flow.
+ */
+function registerTool(
+  name: string,
+  description: string,
+  schema: Record<string, unknown>,
+  handler: (params: any) => Promise<any>,
+) {
+  if (
+    paymentGateConfig.enabled &&
+    !paymentGateConfig.freeTools.includes(name) &&
+    paymentGateConfig.defaultFee
+  ) {
+    const fee = paymentGateConfig.toolFees[name] ?? paymentGateConfig.defaultFee
+    const gatedHandler = createPaymentGatedHandler(name, fee, config, handler)
+    server.tool(name, description, schema, gatedHandler)
+  } else {
+    server.tool(name, description, schema, handler)
+  }
+}
+
 
 // ─── Wallet Tools ────────────────────────────────────────────────────────────
 
@@ -800,6 +827,59 @@ server.tool(
     const result = await authz.revoke(config, {
       granterAddress, password, granteeAddress, msgTypes,
     })
+    return {
+      content: [{
+        type: 'text',
+        text: JSON.stringify(result, null, 2),
+      }],
+    }
+  },
+)
+
+// ─── Payment Tools ──────────────────────────────────────────────────────────
+
+server.tool(
+  'payment_config',
+  'Get the current payment gate configuration. Shows whether payment gating is enabled, ' +
+  'fee amounts, which tools require payment, and which tools are always free.',
+  {},
+  async () => {
+    return {
+      content: [{
+        type: 'text',
+        text: JSON.stringify({
+          enabled: paymentGateConfig.enabled,
+          defaultFee: paymentGateConfig.defaultFee ?? null,
+          toolFees: paymentGateConfig.toolFees,
+          freeTools: paymentGateConfig.freeTools,
+        }, null, 2),
+      }],
+    }
+  },
+)
+
+server.tool(
+  'payment_verify',
+  'Verify a pending payment challenge by providing the payment ID and transaction hash. ' +
+  'Use this after sending an on-chain payment to unlock a gated tool.',
+  {
+    paymentId: z.string().uuid().describe('The payment ID from the PAYMENT_REQUIRED challenge.'),
+    txHash: z.string().min(1).describe('The on-chain transaction hash of your payment.'),
+  },
+  async ({ paymentId, txHash }) => {
+    const challenge = retrieveChallenge(paymentId)
+    if (!challenge) {
+      return {
+        content: [{
+          type: 'text',
+          text: JSON.stringify({
+            verified: false,
+            reason: 'Invalid or expired payment ID. Request a new challenge by calling the gated tool.',
+          }, null, 2),
+        }],
+      }
+    }
+    const result = await verifyPayment(config, { paymentId, txHash }, challenge)
     return {
       content: [{
         type: 'text',

@@ -36,4 +36,8 @@ export type { EvmAccount, BroadcastEvmTxParams, BroadcastEvmTxResult } from './e
 export { eip712 } from './evm/eip712.js'
 export type { Eip712OpenParams, Eip712OpenResult, Eip712CloseParams, Eip712CloseResult } from './evm/eip712.js'
 
+export { loadPaymentGateConfig, createPaymentGatedHandler, generateChallenge, verifyPayment } from './payments/index.js'
+export type { PaymentChallenge, PaymentProof, FeeConfig, PaymentGateConfig, VerificationResult } from './payments/index.js'
+
 export * from './errors/index.js'
+
