@@ -75,7 +75,7 @@ function fromChainPrice(chainPrice: Decimal): Decimal {
 function toChainPrice(humanPrice: Decimal, tickSize: Decimal): string {
   const chainPrice = humanPrice.mul(QUOTE_SCALE)
   const quantized = quantize(chainPrice, tickSize)
-  return quantized.toFixed(0)
+  return quantized.toFixed(0, Decimal.ROUND_DOWN)
 }
 
 /** Scale a human quantity to chain units using the market's quantity tick size. */
@@ -86,7 +86,7 @@ function toChainQuantity(humanQty: Decimal, tickSize: Decimal): string {
 
 /** Convert USDT amount string to base units (×10^6). */
 function usdtToBase(amount: Decimal): string {
-  return amount.mul(new Decimal(10).pow(USDT_DECIMALS)).toFixed(0)
+  return amount.mul(new Decimal(10).pow(USDT_DECIMALS)).toFixed(0, Decimal.ROUND_DOWN)
 }
 
 export const trading = {
@@ -264,8 +264,7 @@ export const trading = {
     // Reduce-only close order — no new margin posted
     const chainMargin = '0'
 
-    const pk = PrivateKey.fromHex(privateKeyHex)
-    const subaccountId = pk.toAddress().getSubaccountId(0)
+    const subaccountId = position.subaccountId
 
     const msg = MsgCreateDerivativeMarketOrder.fromJSON({
       marketId: market.marketId,

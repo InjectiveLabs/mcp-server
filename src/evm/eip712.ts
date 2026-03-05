@@ -59,7 +59,7 @@ function fromChainPrice(chainPrice: Decimal): Decimal {
 }
 
 function toChainPrice(humanPrice: Decimal, tickSize: Decimal): string {
-  return quantize(humanPrice.mul(QUOTE_SCALE), tickSize).toFixed(0)
+  return quantize(humanPrice.mul(QUOTE_SCALE), tickSize).toFixed(0, Decimal.ROUND_DOWN)
 }
 
 function toChainQuantity(humanQty: Decimal, tickSize: Decimal): string {
@@ -68,7 +68,7 @@ function toChainQuantity(humanQty: Decimal, tickSize: Decimal): string {
 }
 
 function usdtToBase(amount: Decimal): string {
-  return amount.mul(QUOTE_SCALE).toFixed(0)
+  return amount.mul(QUOTE_SCALE).toFixed(0, Decimal.ROUND_DOWN)
 }
 
 function hexToBytes(hex: string): Uint8Array {
@@ -273,15 +273,15 @@ export const eip712 = {
     } = params
     const slippageDec = new Decimal(slippage)
 
-    // 1. Decrypt key and derive Ethereum address + subaccount
+    // 1. Decrypt key
     const privateKeyHex = wallets.unlock(address, password)
     const ethWallet = new Wallet(privateKeyHex.startsWith('0x') ? privateKeyHex : `0x${privateKeyHex}`)
-    const subaccountId = Address.fromHex(ethWallet.address).getSubaccountId(0)
 
-    // 2. Find open position
+    // 2. Find open position — use its actual subaccountId, not hardcoded index 0
     const openPositions = await accounts.getPositions(config, address)
     const position = openPositions.find(p => p.symbol.toUpperCase() === symbol.toUpperCase())
     if (!position) throw new NoPositionFound(symbol)
+    const subaccountId = position.subaccountId
 
     // 3. Resolve market + orderbook
     const market = await markets.resolve(config, symbol)
