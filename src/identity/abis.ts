@@ -1,87 +1,137 @@
+/**
+ * ABI subset for the deployed IdentityRegistryUpgradeable contract.
+ * Verified against live testnet contract at 0x19d1916ba1a2ac081b04893563a6ca0c92bc8c8e.
+ * Only includes functions called by the identity module.
+ */
+
 export const IDENTITY_REGISTRY_ABI = [
+  // ── Registration (3 overloads) ──
   {
     type: 'function',
-    name: 'registerAgent',
-    inputs: [
-      { name: 'name', type: 'string' },
-      { name: 'agentType', type: 'uint8' },
-      { name: 'metadataHash', type: 'bytes32' },
-      { name: 'tokenURI', type: 'string' },
-      { name: 'linkedWallet', type: 'address' },
-    ],
-    outputs: [],
+    name: 'register',
+    inputs: [],
+    outputs: [{ name: 'agentId', type: 'uint256' }],
     stateMutability: 'nonpayable',
   },
   {
     type: 'function',
-    name: 'updateMetadata',
-    inputs: [
-      { name: 'tokenId', type: 'uint256' },
-      { name: 'name', type: 'string' },
-      { name: 'agentType', type: 'uint8' },
-      { name: 'metadataHash', type: 'bytes32' },
-    ],
-    outputs: [],
+    name: 'register',
+    inputs: [{ name: 'agentURI', type: 'string' }],
+    outputs: [{ name: 'agentId', type: 'uint256' }],
     stateMutability: 'nonpayable',
   },
   {
     type: 'function',
-    name: 'setTokenURI',
+    name: 'register',
     inputs: [
-      { name: 'tokenId', type: 'uint256' },
-      { name: 'uri', type: 'string' },
+      { name: 'agentURI', type: 'string' },
+      {
+        name: 'metadataEntries',
+        type: 'tuple[]',
+        components: [
+          { name: 'metadataKey', type: 'string' },
+          { name: 'metadataValue', type: 'bytes' },
+        ],
+      },
     ],
-    outputs: [],
+    outputs: [{ name: 'agentId', type: 'uint256' }],
     stateMutability: 'nonpayable',
   },
+  // ── Metadata (per-key) ──
   {
     type: 'function',
-    name: 'setLinkedWallet',
+    name: 'setMetadata',
     inputs: [
-      { name: 'tokenId', type: 'uint256' },
-      { name: 'wallet', type: 'address' },
+      { name: 'agentId', type: 'uint256' },
+      { name: 'metadataKey', type: 'string' },
+      { name: 'metadataValue', type: 'bytes' },
     ],
     outputs: [],
     stateMutability: 'nonpayable',
   },
+  // ── URI ──
+  {
+    type: 'function',
+    name: 'setAgentURI',
+    inputs: [
+      { name: 'agentId', type: 'uint256' },
+      { name: 'newURI', type: 'string' },
+    ],
+    outputs: [],
+    stateMutability: 'nonpayable',
+  },
+  // ── Wallet linking (requires EIP-712 signature) ──
+  {
+    type: 'function',
+    name: 'setAgentWallet',
+    inputs: [
+      { name: 'agentId', type: 'uint256' },
+      { name: 'newWallet', type: 'address' },
+      { name: 'deadline', type: 'uint256' },
+      { name: 'signature', type: 'bytes' },
+    ],
+    outputs: [],
+    stateMutability: 'nonpayable',
+  },
+  // ── Deregister ──
   {
     type: 'function',
     name: 'deregister',
-    inputs: [{ name: 'tokenId', type: 'uint256' }],
+    inputs: [{ name: 'agentId', type: 'uint256' }],
     outputs: [],
     stateMutability: 'nonpayable',
   },
+  // ── Read: metadata (per-key) ──
   {
     type: 'function',
     name: 'getMetadata',
-    inputs: [{ name: 'tokenId', type: 'uint256' }],
-    outputs: [
-      { name: 'name', type: 'string' },
-      { name: 'agentType', type: 'uint8' },
-      { name: 'metadataHash', type: 'bytes32' },
+    inputs: [
+      { name: 'agentId', type: 'uint256' },
+      { name: 'metadataKey', type: 'string' },
     ],
+    outputs: [{ name: '', type: 'bytes' }],
     stateMutability: 'view',
   },
+  // ── Read: wallet ──
   {
     type: 'function',
-    name: 'getLinkedWallet',
-    inputs: [{ name: 'tokenId', type: 'uint256' }],
-    outputs: [{ name: 'wallet', type: 'address' }],
+    name: 'getAgentWallet',
+    inputs: [{ name: 'agentId', type: 'uint256' }],
+    outputs: [{ name: '', type: 'address' }],
     stateMutability: 'view',
   },
+  // ── Read: reverse wallet lookup ──
+  {
+    type: 'function',
+    name: 'getAgentByWallet',
+    inputs: [{ name: 'wallet', type: 'address' }],
+    outputs: [{ name: '', type: 'uint256' }],
+    stateMutability: 'view',
+  },
+  // ── Read: standard ERC-721 ──
   {
     type: 'function',
     name: 'ownerOf',
     inputs: [{ name: 'tokenId', type: 'uint256' }],
-    outputs: [{ name: 'owner', type: 'address' }],
+    outputs: [{ name: '', type: 'address' }],
     stateMutability: 'view',
   },
   {
     type: 'function',
     name: 'tokenURI',
     inputs: [{ name: 'tokenId', type: 'uint256' }],
-    outputs: [{ name: 'uri', type: 'string' }],
+    outputs: [{ name: '', type: 'string' }],
     stateMutability: 'view',
+  },
+  // ── Events ──
+  {
+    type: 'event',
+    name: 'Registered',
+    inputs: [
+      { name: 'agentId', type: 'uint256', indexed: true },
+      { name: 'agentURI', type: 'string', indexed: false },
+      { name: 'owner', type: 'address', indexed: true },
+    ],
   },
   {
     type: 'event',
