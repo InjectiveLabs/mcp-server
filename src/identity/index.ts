@@ -11,7 +11,7 @@ import type { ServiceEntry } from './types.js'
 import { wallets } from '../wallets/index.js'
 import { createIdentityWalletClient, createIdentityPublicClient } from './client.js'
 import { getIdentityConfig, getPinataJwt, type IdentityConfig } from './config.js'
-import { IDENTITY_REGISTRY_ABI } from './abis.js'
+import { IDENTITY_REGISTRY_ABI, REPUTATION_REGISTRY_ABI } from './abis.js'
 import { encodeStringMetadata, walletLinkDeadline, signWalletLink, METADATA_KEYS } from './helpers.js'
 import { IdentityTxFailed, DeregisterNotConfirmed } from '../errors/index.js'
 import { generateAgentCard, fetchAgentCard, mergeAgentCard } from './card.js'
@@ -77,6 +77,37 @@ export interface DeregisterParams {
 export interface DeregisterResult {
   agentId: string
   txHash: string
+}
+
+export interface GiveFeedbackParams {
+  address: string
+  password: string
+  agentId: string
+  value: number
+  valueDecimals?: number
+  tag1?: string
+  tag2?: string
+  endpoint?: string
+  feedbackURI?: string
+  feedbackHash?: string
+}
+
+export interface GiveFeedbackResult {
+  txHash: string
+  agentId: string
+  feedbackIndex?: string
+}
+
+export interface RevokeFeedbackParams {
+  address: string
+  password: string
+  agentId: string
+  feedbackIndex: number
+}
+
+export interface RevokeFeedbackResult {
+  txHash: string
+  agentId: string
 }
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
@@ -368,6 +399,66 @@ export const identity = {
 
       await ctx.publicClient.waitForTransactionReceipt({ hash: txHash })
       return { agentId: params.agentId, txHash }
+    })
+  },
+
+  async giveFeedback(config: Config, params: GiveFeedbackParams): Promise<GiveFeedbackResult> {
+    return withIdentityTx(config, params.address, params.password, async (ctx) => {
+      const feedbackHash = (params.feedbackHash ?? '0x' + '00'.repeat(32)) as `0x${string}`
+
+      const txHash = await ctx.walletClient.writeContract({
+        chain: ctx.chain,
+        account: ctx.account,
+        address: ctx.identityCfg.reputationRegistry,
+        abi: REPUTATION_REGISTRY_ABI,
+        functionName: 'giveFeedback',
+        args: [
+          BigInt(params.agentId),
+          BigInt(params.value),
+          params.valueDecimals ?? 0,
+          params.tag1 ?? '',
+          params.tag2 ?? '',
+          params.endpoint ?? '',
+          params.feedbackURI ?? '',
+          feedbackHash,
+        ],
+      })
+
+      const receipt = await ctx.publicClient.waitForTransactionReceipt({ hash: txHash })
+
+      // Extract feedbackIndex from NewFeedback event
+      let feedbackIndex: string | undefined
+      const registryAddr = ctx.identityCfg.reputationRegistry.toLowerCase()
+      for (const log of receipt.logs) {
+        if (
+          log.address?.toLowerCase() === registryAddr &&
+          log.topics.length === 3 && // NewFeedback: [sig, agentId(indexed), client(indexed)]
+          log.data &&
+          log.data !== '0x'
+        ) {
+          // feedbackIndex is a non-indexed uint64 in log data
+          feedbackIndex = BigInt(log.data).toString()
+          break
+        }
+      }
+
+      return { txHash, agentId: params.agentId, feedbackIndex }
+    })
+  },
+
+  async revokeFeedback(config: Config, params: RevokeFeedbackParams): Promise<RevokeFeedbackResult> {
+    return withIdentityTx(config, params.address, params.password, async (ctx) => {
+      const txHash = await ctx.walletClient.writeContract({
+        chain: ctx.chain,
+        account: ctx.account,
+        address: ctx.identityCfg.reputationRegistry,
+        abi: REPUTATION_REGISTRY_ABI,
+        functionName: 'revokeFeedback',
+        args: [BigInt(params.agentId), BigInt(params.feedbackIndex)],
+      })
+
+      await ctx.publicClient.waitForTransactionReceipt({ hash: txHash })
+      return { txHash, agentId: params.agentId }
     })
   },
 }

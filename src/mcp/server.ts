@@ -938,6 +938,75 @@ server.tool(
   },
 )
 
+server.tool(
+  'agent_reputation',
+  'Get reputation summary for an agent: normalized score, feedback count, and list of evaluator addresses. Read-only, no gas cost.',
+  {
+    agentId: z.string().min(1).describe('The numeric agent ID.'),
+    clientAddresses: z.array(ethAddress).optional().describe('Filter by specific evaluator addresses.'),
+    tag1: z.string().optional().describe('Filter by tag1.'),
+    tag2: z.string().optional().describe('Filter by tag2.'),
+  },
+  async ({ agentId, clientAddresses, tag1, tag2 }) => {
+    const result = await identityRead.reputation(config, { agentId, clientAddresses, tag1, tag2 })
+    return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] }
+  },
+)
+
+server.tool(
+  'agent_feedback_list',
+  'List individual feedback entries for an agent with value, tags, and revocation status. Read-only, no gas cost.',
+  {
+    agentId: z.string().min(1).describe('The numeric agent ID.'),
+    clientAddresses: z.array(ethAddress).optional().describe('Filter by evaluator addresses.'),
+    tag1: z.string().optional().describe('Filter by tag1.'),
+    tag2: z.string().optional().describe('Filter by tag2.'),
+    includeRevoked: z.boolean().optional().describe('Include revoked feedback entries (default false).'),
+  },
+  async ({ agentId, clientAddresses, tag1, tag2, includeRevoked }) => {
+    const result = await identityRead.feedbackList(config, { agentId, clientAddresses, tag1, tag2, includeRevoked })
+    return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] }
+  },
+)
+
+server.tool(
+  'agent_give_feedback',
+  'Submit on-chain feedback for an agent. IMPORTANT: This is a real on-chain transaction that costs gas.',
+  {
+    address: injAddress.describe('Your inj1... address (must be in local keystore).'),
+    password: z.string().describe('Keystore password.'),
+    agentId: z.string().min(1).describe('The agent ID to rate.'),
+    value: z.number().describe('Rating value (integer). Meaning depends on your scale.'),
+    valueDecimals: z.number().int().min(0).max(18).optional().describe('Decimal places for the value (default 0).'),
+    tag1: z.string().optional().describe('Category tag (e.g., "accuracy", "speed").'),
+    tag2: z.string().optional().describe('Secondary tag.'),
+    endpoint: z.string().optional().describe('Service endpoint being rated.'),
+    feedbackURI: z.string().optional().describe('URI with detailed feedback.'),
+    feedbackHash: z.string().optional().describe('32-byte hex hash of feedback content.'),
+  },
+  async ({ address, password, agentId, value, valueDecimals, tag1, tag2, endpoint, feedbackURI, feedbackHash }) => {
+    const result = await identity.giveFeedback(config, {
+      address, password, agentId, value, valueDecimals, tag1, tag2, endpoint, feedbackURI, feedbackHash,
+    })
+    return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] }
+  },
+)
+
+server.tool(
+  'agent_revoke_feedback',
+  'Revoke previously submitted feedback. Only the original submitter can revoke. IMPORTANT: On-chain transaction that costs gas.',
+  {
+    address: injAddress.describe('Your inj1... address (must be in local keystore).'),
+    password: z.string().describe('Keystore password.'),
+    agentId: z.string().min(1).describe('The agent ID.'),
+    feedbackIndex: z.number().int().min(0).describe('The feedback index to revoke (from agent_give_feedback result or agent_feedback_list).'),
+  },
+  async ({ address, password, agentId, feedbackIndex }) => {
+    const result = await identity.revokeFeedback(config, { address, password, agentId, feedbackIndex })
+    return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] }
+  },
+)
+
 // ─── Start ───────────────────────────────────────────────────────────────────
 
 const transport = new StdioServerTransport()

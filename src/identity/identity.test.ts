@@ -612,3 +612,153 @@ describe('identity.deregister', () => {
     ).rejects.toThrow(IdentityTxFailed)
   })
 })
+
+// ─── giveFeedback ──────────────────────────────────────────────────────────
+
+const TEST_REPUTATION_REGISTRY = '0x019b24a73d493d86c61cc5dfea32e4865eecb922'
+
+const FEEDBACK_RECEIPT = {
+  logs: [
+    {
+      address: TEST_REPUTATION_REGISTRY,
+      topics: [
+        '0x' + 'cc'.repeat(32),  // event signature
+        '0x' + '00'.repeat(31) + '2a', // indexed agentId (42)
+        '0x' + '00'.repeat(12) + 'ff'.repeat(20), // indexed client
+      ],
+      data: '0x' + '00'.repeat(31) + '07', // feedbackIndex = 7
+    },
+  ],
+}
+
+describe('identity.giveFeedback', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    mockWriteContract.mockResolvedValue(TEST_TX_HASH)
+    mockWaitForTransactionReceipt.mockResolvedValue(FEEDBACK_RECEIPT)
+  })
+
+  it('calls giveFeedback on ReputationRegistry with correct args', async () => {
+    await identity.giveFeedback(config, {
+      address: TEST_ADDRESS,
+      password: TEST_PASSWORD,
+      agentId: '42',
+      value: 85,
+      valueDecimals: 1,
+      tag1: 'accuracy',
+      tag2: 'v2',
+      endpoint: 'https://api.example.com',
+      feedbackURI: 'ipfs://QmFeedback',
+      feedbackHash: '0x' + 'ab'.repeat(32),
+    })
+
+    expect(mockWriteContract).toHaveBeenCalledTimes(1)
+    expect(mockWriteContract).toHaveBeenCalledWith(
+      expect.objectContaining({
+        address: TEST_REPUTATION_REGISTRY,
+        functionName: 'giveFeedback',
+        args: [
+          42n,
+          85n,
+          1,
+          'accuracy',
+          'v2',
+          'https://api.example.com',
+          'ipfs://QmFeedback',
+          '0x' + 'ab'.repeat(32),
+        ],
+      }),
+    )
+  })
+
+  it('returns txHash and feedbackIndex', async () => {
+    const result = await identity.giveFeedback(config, {
+      address: TEST_ADDRESS,
+      password: TEST_PASSWORD,
+      agentId: '42',
+      value: 5,
+    })
+
+    expect(result.txHash).toBe(TEST_TX_HASH)
+    expect(result.agentId).toBe('42')
+    expect(result.feedbackIndex).toBe('7')
+  })
+
+  it('uses defaults for optional params', async () => {
+    await identity.giveFeedback(config, {
+      address: TEST_ADDRESS,
+      password: TEST_PASSWORD,
+      agentId: '42',
+      value: 10,
+    })
+
+    expect(mockWriteContract).toHaveBeenCalledWith(
+      expect.objectContaining({
+        functionName: 'giveFeedback',
+        args: [
+          42n,
+          10n,
+          0,
+          '',
+          '',
+          '',
+          '',
+          '0x' + '00'.repeat(32),
+        ],
+      }),
+    )
+  })
+})
+
+// ─── revokeFeedback ────────────────────────────────────────────────────────
+
+describe('identity.revokeFeedback', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    mockWriteContract.mockResolvedValue(TEST_TX_HASH)
+    mockWaitForTransactionReceipt.mockResolvedValue({})
+  })
+
+  it('calls revokeFeedback with correct args', async () => {
+    await identity.revokeFeedback(config, {
+      address: TEST_ADDRESS,
+      password: TEST_PASSWORD,
+      agentId: '42',
+      feedbackIndex: 3,
+    })
+
+    expect(mockWriteContract).toHaveBeenCalledTimes(1)
+    expect(mockWriteContract).toHaveBeenCalledWith(
+      expect.objectContaining({
+        address: TEST_REPUTATION_REGISTRY,
+        functionName: 'revokeFeedback',
+        args: [42n, 3n],
+      }),
+    )
+  })
+
+  it('returns txHash and agentId', async () => {
+    const result = await identity.revokeFeedback(config, {
+      address: TEST_ADDRESS,
+      password: TEST_PASSWORD,
+      agentId: '42',
+      feedbackIndex: 3,
+    })
+
+    expect(result.txHash).toBe(TEST_TX_HASH)
+    expect(result.agentId).toBe('42')
+  })
+
+  it('wraps errors in IdentityTxFailed', async () => {
+    mockWriteContract.mockRejectedValue(new Error('revert: not authorized'))
+
+    await expect(
+      identity.revokeFeedback(config, {
+        address: TEST_ADDRESS,
+        password: TEST_PASSWORD,
+        agentId: '42',
+        feedbackIndex: 0,
+      }),
+    ).rejects.toThrow(IdentityTxFailed)
+  })
+})

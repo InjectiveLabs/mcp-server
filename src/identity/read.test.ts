@@ -341,3 +341,128 @@ describe('identityRead.list', () => {
     expect(result.total).toBe(0)
   })
 })
+
+// ─── identityRead.reputation ───────────────────────────────────────────────
+
+describe('identityRead.reputation', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+  })
+
+  it('returns normalized score and clients', async () => {
+    // getSummary returns [count, summaryValue, summaryValueDecimals]
+    // getClients returns address array
+    mockReadContract
+      .mockResolvedValueOnce([5n, 4500n, 2])
+      .mockResolvedValueOnce(['0x' + 'aa'.repeat(20), '0x' + 'bb'.repeat(20)])
+
+    const result = await identityRead.reputation(config, { agentId: AGENT_ID })
+
+    expect(result).toEqual({
+      agentId: '42',
+      score: 45,
+      count: 5,
+      clients: ['0x' + 'aa'.repeat(20), '0x' + 'bb'.repeat(20)],
+    })
+  })
+
+  it('returns zeros for agent with no feedback (catch revert)', async () => {
+    mockReadContract.mockRejectedValue(new Error('execution reverted'))
+
+    const result = await identityRead.reputation(config, { agentId: '999' })
+
+    expect(result).toEqual({
+      agentId: '999',
+      score: 0,
+      count: 0,
+      clients: [],
+    })
+  })
+
+  it('passes filter params correctly', async () => {
+    mockReadContract
+      .mockResolvedValueOnce([1n, 100n, 0])
+      .mockResolvedValueOnce(['0x' + 'cc'.repeat(20)])
+
+    const clientAddresses = ['0x' + 'cc'.repeat(20)]
+    await identityRead.reputation(config, {
+      agentId: AGENT_ID,
+      clientAddresses,
+      tag1: 'accuracy',
+      tag2: 'v2',
+    })
+
+    // Verify getSummary call args
+    expect(mockReadContract).toHaveBeenCalledWith(
+      expect.objectContaining({
+        functionName: 'getSummary',
+        args: [42n, clientAddresses, 'accuracy', 'v2'],
+      }),
+    )
+  })
+})
+
+// ─── identityRead.feedbackList ─────────────────────────────────────────────
+
+describe('identityRead.feedbackList', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+  })
+
+  it('returns zipped entries from readAllFeedback arrays', async () => {
+    mockReadContract.mockResolvedValueOnce([
+      ['0x' + 'aa'.repeat(20), '0x' + 'bb'.repeat(20)],  // clients
+      [0n, 1n],                                             // feedbackIndices
+      [500n, 300n],                                         // values
+      [2, 1],                                               // valueDecimals
+      ['accuracy', 'speed'],                                // tag1s
+      ['v1', 'v2'],                                         // tag2s
+      [false, false],                                       // revokedArr
+    ])
+
+    const result = await identityRead.feedbackList(config, { agentId: AGENT_ID })
+
+    expect(result.agentId).toBe('42')
+    expect(result.entries).toHaveLength(2)
+    expect(result.entries[0]).toEqual({
+      client: '0x' + 'aa'.repeat(20),
+      feedbackIndex: 0,
+      value: 5,
+      tag1: 'accuracy',
+      tag2: 'v1',
+      revoked: false,
+    })
+    expect(result.entries[1]).toEqual({
+      client: '0x' + 'bb'.repeat(20),
+      feedbackIndex: 1,
+      value: 30,
+      tag1: 'speed',
+      tag2: 'v2',
+      revoked: false,
+    })
+  })
+
+  it('returns empty array on revert', async () => {
+    mockReadContract.mockRejectedValue(new Error('execution reverted'))
+
+    const result = await identityRead.feedbackList(config, { agentId: '999' })
+
+    expect(result).toEqual({ agentId: '999', entries: [] })
+  })
+
+  it('normalizes values by decimals', async () => {
+    mockReadContract.mockResolvedValueOnce([
+      ['0x' + 'aa'.repeat(20)],
+      [0n],
+      [12345n],
+      [3],
+      ['tag'],
+      [''],
+      [false],
+    ])
+
+    const result = await identityRead.feedbackList(config, { agentId: AGENT_ID })
+
+    expect(result.entries[0]!.value).toBeCloseTo(12.345, 3)
+  })
+})

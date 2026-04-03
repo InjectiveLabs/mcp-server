@@ -50,6 +50,42 @@ export interface ListResult {
   total: number
 }
 
+export interface ReputationParams {
+  agentId: string
+  clientAddresses?: string[]
+  tag1?: string
+  tag2?: string
+}
+
+export interface ReputationResult {
+  agentId: string
+  score: number
+  count: number
+  clients: string[]
+}
+
+export interface FeedbackListParams {
+  agentId: string
+  clientAddresses?: string[]
+  tag1?: string
+  tag2?: string
+  includeRevoked?: boolean
+}
+
+export interface FeedbackEntry {
+  client: string
+  feedbackIndex: number
+  value: number
+  tag1: string
+  tag2: string
+  revoked: boolean
+}
+
+export interface FeedbackListResult {
+  agentId: string
+  entries: FeedbackEntry[]
+}
+
 // ─── Handlers ───────────────────────────────────────────────────────────────
 
 export const identityRead = {
@@ -232,6 +268,79 @@ export const identityRead = {
       if (err instanceof IdentityTxFailed) throw err
       const message = err instanceof Error ? err.message : String(err)
       throw new IdentityTxFailed(`Failed to list agents: ${message}`)
+    }
+  },
+
+  async reputation(config: Config, params: ReputationParams): Promise<ReputationResult> {
+    const identityCfg = getIdentityConfig(config.network)
+    const publicClient = createIdentityPublicClient(config.network)
+    const tokenId = BigInt(params.agentId)
+
+    try {
+      const [summary, clients] = await Promise.all([
+        publicClient.readContract({
+          address: identityCfg.reputationRegistry,
+          abi: REPUTATION_REGISTRY_ABI,
+          functionName: 'getSummary',
+          args: [tokenId, (params.clientAddresses ?? []) as `0x${string}`[], params.tag1 ?? '', params.tag2 ?? ''],
+        }) as Promise<[bigint, bigint, number]>,
+        publicClient.readContract({
+          address: identityCfg.reputationRegistry,
+          abi: REPUTATION_REGISTRY_ABI,
+          functionName: 'getClients',
+          args: [tokenId],
+        }) as Promise<string[]>,
+      ])
+
+      const [count, summaryValue, summaryValueDecimals] = summary
+      const score = Number(count) > 0
+        ? Number(summaryValue) / Math.pow(10, Number(summaryValueDecimals))
+        : 0
+
+      return {
+        agentId: params.agentId,
+        score,
+        count: Number(count),
+        clients,
+      }
+    } catch {
+      return { agentId: params.agentId, score: 0, count: 0, clients: [] }
+    }
+  },
+
+  async feedbackList(config: Config, params: FeedbackListParams): Promise<FeedbackListResult> {
+    const identityCfg = getIdentityConfig(config.network)
+    const publicClient = createIdentityPublicClient(config.network)
+    const tokenId = BigInt(params.agentId)
+
+    try {
+      const result = await publicClient.readContract({
+        address: identityCfg.reputationRegistry,
+        abi: REPUTATION_REGISTRY_ABI,
+        functionName: 'readAllFeedback',
+        args: [
+          tokenId,
+          (params.clientAddresses ?? []) as `0x${string}`[],
+          params.tag1 ?? '',
+          params.tag2 ?? '',
+          params.includeRevoked ?? false,
+        ],
+      }) as [string[], bigint[], bigint[], number[], string[], string[], boolean[]]
+
+      const [clients, feedbackIndices, values, valueDecimals, tag1s, tag2s, revokedArr] = result
+
+      const entries: FeedbackEntry[] = clients.map((client, i) => ({
+        client,
+        feedbackIndex: Number(feedbackIndices[i]!),
+        value: Number(values[i]!) / Math.pow(10, Number(valueDecimals[i]!)),
+        tag1: tag1s[i]!,
+        tag2: tag2s[i]!,
+        revoked: revokedArr[i]!,
+      }))
+
+      return { agentId: params.agentId, entries }
+    } catch {
+      return { agentId: params.agentId, entries: [] }
     }
   },
 }
