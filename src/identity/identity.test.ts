@@ -7,7 +7,10 @@ import { encodeStringMetadata } from './helpers.js'
 
 const mockWriteContract = vi.fn()
 const mockWaitForTransactionReceipt = vi.fn()
+const mockReadContract = vi.fn()
 const mockSignTypedData = vi.fn()
+
+const mockUploadJSON = vi.fn().mockResolvedValue('ipfs://QmTestCard123')
 
 const TEST_ACCOUNT_ADDRESS = '0x' + 'ff'.repeat(20) as `0x${string}`
 
@@ -28,6 +31,7 @@ vi.mock('./client.js', () => ({
   })),
   createIdentityPublicClient: vi.fn(() => ({
     waitForTransactionReceipt: mockWaitForTransactionReceipt,
+    readContract: mockReadContract,
   })),
 }))
 
@@ -40,9 +44,34 @@ vi.mock('./helpers.js', async () => {
   }
 })
 
+vi.mock('./storage.js', () => ({
+  PinataStorage: vi.fn().mockImplementation(() => ({
+    uploadJSON: mockUploadJSON,
+  })),
+  StorageError: class extends Error { code = 'STORAGE_ERROR' },
+}))
+
+vi.mock('./card.js', () => ({
+  generateAgentCard: vi.fn().mockReturnValue({ type: 'test', name: 'TestBot' }),
+  validateImageUrl: vi.fn(),
+  fetchAgentCard: vi.fn().mockResolvedValue(null),
+  mergeAgentCard: vi.fn().mockReturnValue({ type: 'test', name: 'MergedBot' }),
+}))
+
+vi.mock('./config.js', async () => {
+  const actual = await vi.importActual<typeof import('./config.js')>('./config.js')
+  return {
+    ...actual,
+    getPinataJwt: vi.fn(() => 'mock-jwt'),
+  }
+})
+
 import { identity } from './index.js'
 import { wallets } from '../wallets/index.js'
 import { createIdentityWalletClient, createIdentityPublicClient } from './client.js'
+import { generateAgentCard, validateImageUrl, fetchAgentCard, mergeAgentCard } from './card.js'
+import { getPinataJwt } from './config.js'
+import { PinataStorage } from './storage.js'
 
 // ─── Fixtures ───────────────────────────────────────────────────────────────
 
@@ -98,6 +127,7 @@ describe('identity.register', () => {
     expect(result.txHash).toBe(TEST_TX_HASH)
     expect(result.owner).toBe(TEST_ACCOUNT_ADDRESS)
     expect(result.evmAddress).toBe(TEST_ACCOUNT_ADDRESS)
+    expect(result.cardUri).toBe('ipfs://QmTestCard123')
 
     // Verify register was called with correct function and metadata tuple array
     expect(mockWriteContract).toHaveBeenCalledTimes(1)
@@ -105,7 +135,7 @@ describe('identity.register', () => {
       expect.objectContaining({
         functionName: 'register',
         args: [
-          '',
+          'ipfs://QmTestCard123',
           [
             { metadataKey: 'name', metadataValue: encodeStringMetadata('MyAgent') },
             { metadataKey: 'agentType', metadataValue: encodeStringMetadata('trading') },
@@ -116,9 +146,9 @@ describe('identity.register', () => {
     )
   })
 
-  it('passes optional uri to register call', async () => {
+  it('passes optional uri to register call and skips card generation', async () => {
     const params = { ...defaultRegisterParams(), uri: 'https://example.com/agent.json' }
-    await identity.register(config, params)
+    const result = await identity.register(config, params)
 
     expect(mockWriteContract).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -129,13 +159,16 @@ describe('identity.register', () => {
         ],
       }),
     )
+    expect(result.cardUri).toBe('https://example.com/agent.json')
+    expect(generateAgentCard).not.toHaveBeenCalled()
+    expect(mockUploadJSON).not.toHaveBeenCalled()
   })
 
-  it('passes empty string for uri when not provided', async () => {
+  it('uses IPFS URI from card upload when uri not provided', async () => {
     await identity.register(config, defaultRegisterParams())
 
     const callArgs = mockWriteContract.mock.calls[0]![0]
-    expect(callArgs.args[0]).toBe('')
+    expect(callArgs.args[0]).toBe('ipfs://QmTestCard123')
   })
 
   it('calls wallets.unlock with correct address/password', async () => {
@@ -202,6 +235,42 @@ describe('identity.register', () => {
     await expect(identity.register(config, defaultRegisterParams())).rejects.toThrow(
       'Identity transaction failed: revert: not authorized',
     )
+  })
+
+  it('register without uri builds card, uploads to Pinata, returns cardUri', async () => {
+    const result = await identity.register(config, defaultRegisterParams())
+
+    expect(generateAgentCard).toHaveBeenCalledWith(
+      expect.objectContaining({
+        name: 'MyAgent',
+        agentType: 'trading',
+        builderCode: 'builder-xyz',
+        operatorAddress: TEST_ACCOUNT_ADDRESS,
+      }),
+    )
+    expect(PinataStorage).toHaveBeenCalledWith('mock-jwt')
+    expect(mockUploadJSON).toHaveBeenCalledWith(
+      { type: 'test', name: 'TestBot' },
+      'agent-card-MyAgent',
+    )
+    expect(result.cardUri).toBe('ipfs://QmTestCard123')
+  })
+
+  it('register without uri and without PINATA_JWT throws clear error', async () => {
+    vi.mocked(getPinataJwt).mockReturnValueOnce(undefined)
+
+    await expect(identity.register(config, defaultRegisterParams())).rejects.toThrow(
+      'IPFS storage not configured',
+    )
+  })
+
+  it('register with invalid image URL throws validation error', async () => {
+    vi.mocked(validateImageUrl).mockImplementationOnce(() => {
+      throw new Error('Image must be a URL (https://, http://, or ipfs://). Local file paths are not supported in MCP.')
+    })
+
+    const params = { ...defaultRegisterParams(), image: '/local/path.png' }
+    await expect(identity.register(config, params)).rejects.toThrow('Image must be a URL')
   })
 })
 
@@ -379,6 +448,101 @@ describe('identity.update', () => {
         name: 'Fail',
       }),
     ).rejects.toThrow(IdentityTxFailed)
+  })
+
+  it('update image fetches card, merges, uploads, calls setAgentURI', async () => {
+    vi.mocked(fetchAgentCard).mockResolvedValueOnce({
+      type: 'https://erc8004.org/agent-card',
+      name: 'OldBot',
+      image: '',
+      services: [],
+      x402Support: false,
+      metadata: { chain: 'injective', chainId: '1439', agentType: 'trading', builderCode: 'b', operatorAddress: '0x1' },
+    })
+    mockReadContract.mockResolvedValueOnce('ipfs://QmExisting')
+
+    const result = await identity.update(config, {
+      address: TEST_ADDRESS,
+      password: TEST_PASSWORD,
+      agentId: '42',
+      image: 'https://example.com/img.png',
+    })
+
+    expect(fetchAgentCard).toHaveBeenCalledWith('ipfs://QmExisting', expect.stringContaining('ipfs'))
+    expect(mergeAgentCard).toHaveBeenCalledWith(
+      expect.objectContaining({ name: 'OldBot' }),
+      expect.objectContaining({ image: 'https://example.com/img.png' }),
+    )
+    expect(mockUploadJSON).toHaveBeenCalled()
+    expect(mockWriteContract).toHaveBeenCalledWith(
+      expect.objectContaining({
+        functionName: 'setAgentURI',
+        args: [42n, 'ipfs://QmTestCard123'],
+      }),
+    )
+    expect(result.cardUri).toBe('ipfs://QmTestCard123')
+  })
+
+  it('update description fetches card, merges, uploads, calls setAgentURI', async () => {
+    vi.mocked(fetchAgentCard).mockResolvedValueOnce({
+      type: 'https://erc8004.org/agent-card',
+      name: 'OldBot',
+      image: '',
+      services: [],
+      x402Support: false,
+      metadata: { chain: 'injective', chainId: '1439', agentType: 'trading', builderCode: 'b', operatorAddress: '0x1' },
+    })
+    mockReadContract.mockResolvedValueOnce('ipfs://QmExisting')
+
+    const result = await identity.update(config, {
+      address: TEST_ADDRESS,
+      password: TEST_PASSWORD,
+      agentId: '42',
+      description: 'A new description',
+    })
+
+    expect(mergeAgentCard).toHaveBeenCalledWith(
+      expect.objectContaining({ name: 'OldBot' }),
+      expect.objectContaining({ description: 'A new description' }),
+    )
+    expect(result.cardUri).toBe('ipfs://QmTestCard123')
+  })
+
+  it('update only name (metadata-only) does not trigger card operations', async () => {
+    await identity.update(config, {
+      address: TEST_ADDRESS,
+      password: TEST_PASSWORD,
+      agentId: '42',
+      name: 'NewName',
+    })
+
+    expect(fetchAgentCard).not.toHaveBeenCalled()
+    expect(mergeAgentCard).not.toHaveBeenCalled()
+    expect(mockUploadJSON).not.toHaveBeenCalled()
+    expect(mockWriteContract).toHaveBeenCalledTimes(1)
+    expect(mockWriteContract).toHaveBeenCalledWith(
+      expect.objectContaining({ functionName: 'setMetadata' }),
+    )
+  })
+
+  it('update card field when no existing card builds from scratch', async () => {
+    vi.mocked(fetchAgentCard).mockResolvedValueOnce(null)
+    mockReadContract.mockResolvedValueOnce('')
+
+    const result = await identity.update(config, {
+      address: TEST_ADDRESS,
+      password: TEST_PASSWORD,
+      agentId: '42',
+      image: 'https://example.com/new.png',
+    })
+
+    expect(generateAgentCard).toHaveBeenCalledWith(
+      expect.objectContaining({
+        operatorAddress: TEST_ACCOUNT_ADDRESS,
+        image: 'https://example.com/new.png',
+      }),
+    )
+    expect(result.cardUri).toBe('ipfs://QmTestCard123')
   })
 })
 

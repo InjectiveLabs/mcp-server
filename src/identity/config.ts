@@ -6,6 +6,7 @@ export interface IdentityConfig {
   identityRegistry: `0x${string}`
   reputationRegistry: `0x${string}`
   deployBlock: bigint
+  ipfsGateway: string
 }
 
 // EVM JSON-RPC chain IDs per PRD-021. These are for viem JSON-RPC calls to
@@ -19,6 +20,7 @@ const TESTNET: IdentityConfig = {
   identityRegistry: '0x19d1916ba1a2ac081b04893563a6ca0c92bc8c8e',
   reputationRegistry: '0x019b24a73d493d86c61cc5dfea32e4865eecb922',
   deployBlock: 0n,
+  ipfsGateway: process.env['IPFS_GATEWAY'] || 'https://w3s.link/ipfs/',
 }
 
 const MAINNET: IdentityConfig = {
@@ -27,6 +29,7 @@ const MAINNET: IdentityConfig = {
   identityRegistry: '0x0000000000000000000000000000000000000003', // TODO: real address
   reputationRegistry: '0x0000000000000000000000000000000000000004', // TODO: real address
   deployBlock: 0n,
+  ipfsGateway: process.env['IPFS_GATEWAY'] || 'https://w3s.link/ipfs/',
 }
 
 const CONFIGS: Record<NetworkName, IdentityConfig> = {
@@ -36,4 +39,8 @@ const CONFIGS: Record<NetworkName, IdentityConfig> = {
 
 export function getIdentityConfig(network: NetworkName): IdentityConfig {
   return CONFIGS[network]
+}
+
+export function getPinataJwt(): string | undefined {
+  return process.env['PINATA_JWT']
 }

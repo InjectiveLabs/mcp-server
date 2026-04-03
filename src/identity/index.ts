@@ -7,12 +7,15 @@
  */
 import type { Config } from '../config/index.js'
 import type { PublicClient, WalletClient, Account, Chain } from 'viem'
+import type { ServiceEntry } from './types.js'
 import { wallets } from '../wallets/index.js'
 import { createIdentityWalletClient, createIdentityPublicClient } from './client.js'
-import { getIdentityConfig, type IdentityConfig } from './config.js'
+import { getIdentityConfig, getPinataJwt, type IdentityConfig } from './config.js'
 import { IDENTITY_REGISTRY_ABI } from './abis.js'
 import { encodeStringMetadata, walletLinkDeadline, signWalletLink, METADATA_KEYS } from './helpers.js'
 import { IdentityTxFailed, DeregisterNotConfirmed } from '../errors/index.js'
+import { generateAgentCard, validateImageUrl, fetchAgentCard, mergeAgentCard } from './card.js'
+import { PinataStorage } from './storage.js'
 
 // ─── Parameter / result types ───────────────────────────────────────────────
 
@@ -24,6 +27,9 @@ export interface RegisterParams {
   builderCode: string
   wallet?: string
   uri?: string
+  description?: string
+  image?: string
+  services?: ServiceEntry[]
 }
 
 export interface RegisterResult {
@@ -31,6 +37,7 @@ export interface RegisterResult {
   txHash: string
   owner: string
   evmAddress: string
+  cardUri: string
   walletTxHash?: string
   walletLinkSkipped?: boolean
   walletLinkReason?: string
@@ -45,11 +52,16 @@ export interface UpdateParams {
   builderCode?: string
   uri?: string
   wallet?: string
+  description?: string
+  image?: string
+  services?: ServiceEntry[]
+  removeServices?: string[]
 }
 
 export interface UpdateResult {
   agentId: string
   txHashes: string[]
+  cardUri?: string
   walletTxHash?: string
   walletLinkSkipped?: boolean
   walletLinkReason?: string
@@ -153,7 +165,36 @@ async function linkWalletIfSelf(
 
 export const identity = {
   async register(config: Config, params: RegisterParams): Promise<RegisterResult> {
+    // Card generation step (before withIdentityTx to fail fast on missing JWT)
+    let cardUri = params.uri ?? ''
+
+    if (!params.uri) {
+      const jwt = getPinataJwt()
+      if (!jwt) {
+        throw new IdentityTxFailed(
+          'IPFS storage not configured. Set PINATA_JWT environment variable or provide a uri parameter.'
+        )
+      }
+      if (params.image) validateImageUrl(params.image)
+    }
+
     return withIdentityTx(config, params.address, params.password, async (ctx) => {
+      // Build and upload card if no URI provided
+      if (!params.uri) {
+        const card = generateAgentCard({
+          name: params.name,
+          agentType: params.type,
+          builderCode: params.builderCode,
+          operatorAddress: ctx.account.address,
+          chainId: ctx.identityCfg.chainId,
+          description: params.description,
+          image: params.image,
+          services: params.services,
+        })
+        const storage = new PinataStorage(getPinataJwt()!)
+        cardUri = await storage.uploadJSON(card, `agent-card-${params.name}`)
+      }
+
       const metadata = [
         { metadataKey: METADATA_KEYS.NAME, metadataValue: encodeStringMetadata(params.name) },
         { metadataKey: METADATA_KEYS.AGENT_TYPE, metadataValue: encodeStringMetadata(params.type) },
@@ -166,7 +207,7 @@ export const identity = {
         address: ctx.identityCfg.identityRegistry,
         abi: IDENTITY_REGISTRY_ABI,
         functionName: 'register',
-        args: [params.uri ?? '', metadata],
+        args: [cardUri, metadata],
       })
 
       const receipt = await ctx.publicClient.waitForTransactionReceipt({ hash: txHash })
@@ -193,19 +234,26 @@ export const identity = {
         txHash,
         owner: ctx.account.address,
         evmAddress: ctx.account.address,
+        cardUri,
         ...walletResult,
       }
     })
   },
 
   async update(config: Config, params: UpdateParams): Promise<UpdateResult> {
-    if ([params.name, params.type, params.builderCode, params.uri, params.wallet].every(v => v === undefined)) {
+    const hasCardUpdate = params.description !== undefined || params.image !== undefined
+      || params.services !== undefined || (params.removeServices?.length ?? 0) > 0
+
+    if ([params.name, params.type, params.builderCode, params.uri, params.wallet,
+         params.description, params.image, params.services].every(v => v === undefined)
+        && !(params.removeServices?.length)) {
       throw new IdentityTxFailed('No fields provided to update')
     }
 
     return withIdentityTx(config, params.address, params.password, async (ctx) => {
       const id = BigInt(params.agentId)
       const registry = ctx.identityCfg.identityRegistry
+      const result: UpdateResult = { agentId: params.agentId, txHashes: [] }
 
       // Phase 1: send all metadata + URI txs sequentially (nonce ordering)
       const pendingHashes: `0x${string}`[] = []
@@ -226,7 +274,7 @@ export const identity = {
         }
       }
 
-      if (params.uri !== undefined) {
+      if (params.uri !== undefined && !hasCardUpdate) {
         const txHash = await ctx.walletClient.writeContract({
           chain: ctx.chain, account: ctx.account,
           address: registry, abi: IDENTITY_REGISTRY_ABI,
@@ -236,14 +284,68 @@ export const identity = {
         pendingHashes.push(txHash)
       }
 
+      // Card update: fetch existing card, merge, re-upload
+      if (hasCardUpdate && !params.uri) {
+        const jwt = getPinataJwt()
+        if (!jwt) {
+          throw new IdentityTxFailed(
+            'IPFS storage not configured. Set PINATA_JWT environment variable or provide a uri parameter.'
+          )
+        }
+        if (params.image) validateImageUrl(params.image)
+
+        // Fetch existing card
+        const tokenURI = await ctx.publicClient.readContract({
+          address: ctx.identityCfg.identityRegistry,
+          abi: IDENTITY_REGISTRY_ABI,
+          functionName: 'tokenURI',
+          args: [id],
+        }) as string
+
+        let card = await fetchAgentCard(tokenURI, ctx.identityCfg.ipfsGateway)
+
+        if (card) {
+          card = mergeAgentCard(card, {
+            name: params.name,
+            description: params.description,
+            image: params.image,
+            services: params.services,
+            removeServices: params.removeServices,
+          })
+        } else {
+          card = generateAgentCard({
+            name: params.name ?? '',
+            agentType: params.type ?? '',
+            builderCode: params.builderCode ?? '',
+            operatorAddress: ctx.account.address,
+            chainId: ctx.identityCfg.chainId,
+            description: params.description,
+            image: params.image,
+            services: params.services,
+          })
+        }
+
+        const storage = new PinataStorage(jwt)
+        const newUri = await storage.uploadJSON(card, `agent-card-update-${params.agentId}`)
+
+        const txHash = await ctx.walletClient.writeContract({
+          chain: ctx.chain, account: ctx.account,
+          address: registry, abi: IDENTITY_REGISTRY_ABI,
+          functionName: 'setAgentURI',
+          args: [id, newUri],
+        })
+        pendingHashes.push(txHash)
+        result.cardUri = newUri
+      }
+
       // Phase 2: wait for all receipts in parallel
       await Promise.all(pendingHashes.map(h => ctx.publicClient.waitForTransactionReceipt({ hash: h })))
 
       const walletResult = await linkWalletIfSelf(ctx, id, params.wallet)
 
+      result.txHashes = pendingHashes
       return {
-        agentId: params.agentId,
-        txHashes: pendingHashes,
+        ...result,
         ...walletResult,
       }
     })

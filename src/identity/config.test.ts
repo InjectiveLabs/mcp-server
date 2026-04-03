@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { getIdentityConfig } from './config.js'
+import { getIdentityConfig, getPinataJwt } from './config.js'
 
 describe('identity config', () => {
   it('testnet has chainId 1439', () => {
@@ -38,5 +38,22 @@ describe('identity config', () => {
     const mainnet = getIdentityConfig('mainnet')
     expect(testnet.identityRegistry).not.toBe(mainnet.identityRegistry)
     expect(testnet.reputationRegistry).not.toBe(mainnet.reputationRegistry)
+  })
+
+  it('has ipfsGateway', () => {
+    const cfg = getIdentityConfig('testnet')
+    expect(cfg.ipfsGateway).toContain('ipfs')
+  })
+
+  it('mainnet has ipfsGateway', () => {
+    const cfg = getIdentityConfig('mainnet')
+    expect(cfg.ipfsGateway).toContain('ipfs')
+  })
+
+  it('getPinataJwt returns undefined when env not set', () => {
+    const original = process.env['PINATA_JWT']
+    delete process.env['PINATA_JWT']
+    expect(getPinataJwt()).toBeUndefined()
+    if (original !== undefined) process.env['PINATA_JWT'] = original
   })
 })
