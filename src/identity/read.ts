@@ -96,12 +96,13 @@ export const identityRead = {
           functionName: 'getAgentWallet',
           args: [tokenId],
         }) as Promise<string>,
+        // Reputation may not exist for new agents — return zeros on revert
         publicClient.readContract({
           address: identityCfg.reputationRegistry,
           abi: REPUTATION_REGISTRY_ABI,
           functionName: 'getReputation',
           args: [tokenId],
-        }) as Promise<[bigint, bigint]>,
+        }).catch(() => [0n, 0n]) as Promise<[bigint, bigint]>,
       ])
 
       const name = decodeStringMetadata(nameRaw)

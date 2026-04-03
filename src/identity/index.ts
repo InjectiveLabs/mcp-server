@@ -171,13 +171,14 @@ export const identity = {
 
       const receipt = await ctx.publicClient.waitForTransactionReceipt({ hash: txHash })
 
-      // Extract agentId from Registered event (topic[1] = indexed agentId)
+      // Extract agentId from Registered event: topics = [sig, agentId(indexed), owner(indexed)]
+      // Must match exactly 3 topics to avoid confusing with Transfer (4 topics)
       let agentId = '0'
       const registryAddr = ctx.identityCfg.identityRegistry.toLowerCase()
       for (const log of receipt.logs) {
         if (
           log.address?.toLowerCase() === registryAddr &&
-          log.topics.length >= 2 &&
+          log.topics.length === 3 &&
           log.topics[1]
         ) {
           agentId = BigInt(log.topics[1]).toString()

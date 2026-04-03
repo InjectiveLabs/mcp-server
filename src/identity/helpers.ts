@@ -19,7 +19,7 @@ export function decodeStringMetadata(raw: Hex): string {
   return decoded
 }
 
-export function walletLinkDeadline(offsetSeconds = 600): bigint {
+export function walletLinkDeadline(offsetSeconds = 120): bigint {
   return BigInt(Math.floor(Date.now() / 1000) + offsetSeconds)
 }
 
