@@ -10,7 +10,7 @@ import { createIdentityPublicClient } from './client.js'
 import { getIdentityConfig } from './config.js'
 import { IDENTITY_REGISTRY_ABI, REPUTATION_REGISTRY_ABI } from './abis.js'
 import { IdentityNotFound, IdentityTxFailed } from '../errors/index.js'
-import { decodeStringMetadata } from './helpers.js'
+import { decodeStringMetadata, METADATA_KEYS } from './helpers.js'
 
 // ─── Parameter / result types ───────────────────────────────────────────────
 
@@ -64,19 +64,19 @@ export const identityRead = {
           address: identityCfg.identityRegistry,
           abi: IDENTITY_REGISTRY_ABI,
           functionName: 'getMetadata',
-          args: [tokenId, 'name'],
+          args: [tokenId, METADATA_KEYS.NAME],
         }) as Promise<Hex>,
         publicClient.readContract({
           address: identityCfg.identityRegistry,
           abi: IDENTITY_REGISTRY_ABI,
           functionName: 'getMetadata',
-          args: [tokenId, 'builderCode'],
+          args: [tokenId, METADATA_KEYS.BUILDER_CODE],
         }) as Promise<Hex>,
         publicClient.readContract({
           address: identityCfg.identityRegistry,
           abi: IDENTITY_REGISTRY_ABI,
           functionName: 'getMetadata',
-          args: [tokenId, 'agentType'],
+          args: [tokenId, METADATA_KEYS.AGENT_TYPE],
         }) as Promise<Hex>,
         publicClient.readContract({
           address: identityCfg.identityRegistry,
@@ -186,13 +186,13 @@ export const identityRead = {
               address: identityCfg.identityRegistry,
               abi: IDENTITY_REGISTRY_ABI,
               functionName: 'getMetadata',
-              args: [tokenId, 'name'],
+              args: [tokenId, METADATA_KEYS.NAME],
             }) as Promise<Hex>,
             publicClient.readContract({
               address: identityCfg.identityRegistry,
               abi: IDENTITY_REGISTRY_ABI,
               functionName: 'getMetadata',
-              args: [tokenId, 'agentType'],
+              args: [tokenId, METADATA_KEYS.AGENT_TYPE],
             }) as Promise<Hex>,
             publicClient.readContract({
               address: identityCfg.identityRegistry,

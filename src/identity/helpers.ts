@@ -3,6 +3,12 @@ import type { Account, Hex } from 'viem'
 
 const STRING_PARAM = parseAbiParameters('string')
 
+export const METADATA_KEYS = {
+  NAME: 'name',
+  AGENT_TYPE: 'agentType',
+  BUILDER_CODE: 'builderCode',
+} as const
+
 export function encodeStringMetadata(value: string): Hex {
   return encodeAbiParameters(STRING_PARAM, [value])
 }

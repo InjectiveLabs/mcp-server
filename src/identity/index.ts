@@ -11,19 +11,19 @@ import { wallets } from '../wallets/index.js'
 import { createIdentityWalletClient, createIdentityPublicClient } from './client.js'
 import { getIdentityConfig, type IdentityConfig } from './config.js'
 import { IDENTITY_REGISTRY_ABI } from './abis.js'
-import { encodeStringMetadata, walletLinkDeadline, signWalletLink } from './helpers.js'
+import { encodeStringMetadata, walletLinkDeadline, signWalletLink, METADATA_KEYS } from './helpers.js'
 import { IdentityTxFailed, DeregisterNotConfirmed } from '../errors/index.js'
 
 // ─── Parameter / result types ───────────────────────────────────────────────
 
 export interface RegisterParams {
-  address: string      // inj1... for keystore
+  address: string
   password: string
-  name: string         // agent name (stored as metadata key "name")
-  type: string         // agent type string, e.g. "trading" (stored as metadata key "agentType")
-  builderCode: string  // builder identifier string (stored as metadata key "builderCode")
-  wallet?: string      // 0x... EVM address to link (optional, self-link only)
-  uri?: string         // token URI (e.g. IPFS link to agent card)
+  name: string
+  type: string
+  builderCode: string
+  wallet?: string
+  uri?: string
 }
 
 export interface RegisterResult {
@@ -40,11 +40,11 @@ export interface UpdateParams {
   address: string
   password: string
   agentId: string
-  name?: string         // update agent name via setMetadata
-  type?: string         // agent type string
-  builderCode?: string  // builder identifier string
+  name?: string
+  type?: string
+  builderCode?: string
   uri?: string
-  wallet?: string       // self-link only
+  wallet?: string
 }
 
 export interface UpdateResult {
@@ -74,7 +74,6 @@ interface TxContext {
   publicClient: PublicClient
   account: Account
   chain: Chain
-  identityRegistry: `0x${string}`
   identityCfg: IdentityConfig
 }
 
@@ -97,7 +96,6 @@ async function withIdentityTx<T>(
       publicClient,
       account,
       chain: walletClient.chain!,
-      identityRegistry: identityCfg.identityRegistry,
       identityCfg,
     })
   } catch (err) {
@@ -107,23 +105,65 @@ async function withIdentityTx<T>(
   }
 }
 
+interface WalletLinkResult {
+  walletTxHash?: string
+  walletLinkSkipped?: boolean
+  walletLinkReason?: string
+}
+
+async function linkWalletIfSelf(
+  ctx: TxContext,
+  agentId: bigint,
+  wallet: string | undefined,
+): Promise<WalletLinkResult> {
+  if (!wallet) return {}
+
+  if (wallet.toLowerCase() !== ctx.account.address.toLowerCase()) {
+    return {
+      walletLinkSkipped: true,
+      walletLinkReason: 'Wallet differs from signer. Link manually with the wallet\'s private key.',
+    }
+  }
+
+  const deadline = walletLinkDeadline()
+  const signature = await signWalletLink({
+    account: ctx.account,
+    agentId,
+    newWallet: wallet as `0x${string}`,
+    ownerAddress: ctx.account.address,
+    deadline,
+    chainId: ctx.identityCfg.chainId,
+    verifyingContract: ctx.identityCfg.identityRegistry,
+  })
+
+  const walletTxHash = await ctx.walletClient.writeContract({
+    chain: ctx.chain,
+    account: ctx.account,
+    address: ctx.identityCfg.identityRegistry,
+    abi: IDENTITY_REGISTRY_ABI,
+    functionName: 'setAgentWallet',
+    args: [agentId, wallet as `0x${string}`, deadline, signature],
+  })
+  await ctx.publicClient.waitForTransactionReceipt({ hash: walletTxHash })
+
+  return { walletTxHash }
+}
+
 // ─── Handlers ───────────────────────────────────────────────────────────────
 
 export const identity = {
   async register(config: Config, params: RegisterParams): Promise<RegisterResult> {
     return withIdentityTx(config, params.address, params.password, async (ctx) => {
-      // 1. Build metadata entries
       const metadata = [
-        { metadataKey: 'name', metadataValue: encodeStringMetadata(params.name) },
-        { metadataKey: 'agentType', metadataValue: encodeStringMetadata(params.type) },
-        { metadataKey: 'builderCode', metadataValue: encodeStringMetadata(params.builderCode) },
+        { metadataKey: METADATA_KEYS.NAME, metadataValue: encodeStringMetadata(params.name) },
+        { metadataKey: METADATA_KEYS.AGENT_TYPE, metadataValue: encodeStringMetadata(params.type) },
+        { metadataKey: METADATA_KEYS.BUILDER_CODE, metadataValue: encodeStringMetadata(params.builderCode) },
       ]
 
-      // 2. Call register(agentURI, metadata[]) overload
       const txHash = await ctx.walletClient.writeContract({
         chain: ctx.chain,
         account: ctx.account,
-        address: ctx.identityRegistry,
+        address: ctx.identityCfg.identityRegistry,
         abi: IDENTITY_REGISTRY_ABI,
         functionName: 'register',
         args: [params.uri ?? '', metadata],
@@ -131,142 +171,80 @@ export const identity = {
 
       const receipt = await ctx.publicClient.waitForTransactionReceipt({ hash: txHash })
 
-      // 3. Extract agentId from Registered event (topic[1] = indexed agentId)
+      // Extract agentId from Registered event (topic[1] = indexed agentId)
       let agentId = '0'
+      const registryAddr = ctx.identityCfg.identityRegistry.toLowerCase()
       for (const log of receipt.logs) {
-        if (log.topics.length >= 2 && log.topics[1]) {
-          // Registered event: topics[0]=sig, topics[1]=agentId(indexed), topics[2]=owner(indexed)
-          const registryAddr = ctx.identityRegistry.toLowerCase()
-          if (log.address?.toLowerCase() === registryAddr) {
-            agentId = BigInt(log.topics[1]).toString()
-            break
-          }
+        if (
+          log.address?.toLowerCase() === registryAddr &&
+          log.topics.length >= 2 &&
+          log.topics[1]
+        ) {
+          agentId = BigInt(log.topics[1]).toString()
+          break
         }
       }
 
-      const result: RegisterResult = {
+      const walletResult = await linkWalletIfSelf(ctx, BigInt(agentId), params.wallet)
+
+      return {
         agentId,
         txHash,
         owner: ctx.account.address,
         evmAddress: ctx.account.address,
+        ...walletResult,
       }
-
-      // 4. Optional wallet linking (self-link only)
-      if (params.wallet) {
-        if (params.wallet.toLowerCase() === ctx.account.address.toLowerCase()) {
-          // Self-link: sign EIP-712 and call setAgentWallet
-          const deadline = walletLinkDeadline()
-          const signature = await signWalletLink({
-            account: ctx.account,
-            agentId: BigInt(agentId),
-            newWallet: params.wallet as `0x${string}`,
-            ownerAddress: ctx.account.address,
-            deadline,
-            chainId: ctx.identityCfg.chainId,
-            verifyingContract: ctx.identityRegistry,
-          })
-
-          const walletTxHash = await ctx.walletClient.writeContract({
-            chain: ctx.chain,
-            account: ctx.account,
-            address: ctx.identityRegistry,
-            abi: IDENTITY_REGISTRY_ABI,
-            functionName: 'setAgentWallet',
-            args: [BigInt(agentId), params.wallet as `0x${string}`, deadline, signature],
-          })
-          await ctx.publicClient.waitForTransactionReceipt({ hash: walletTxHash })
-          result.walletTxHash = walletTxHash
-        } else {
-          // Different wallet: skip with warning
-          result.walletLinkSkipped = true
-          result.walletLinkReason = 'Wallet differs from signer. Link manually with the wallet\'s private key.'
-        }
-      }
-
-      return result
     })
   },
 
   async update(config: Config, params: UpdateParams): Promise<UpdateResult> {
-    // Validation: at least one field
-    const hasName = params.name !== undefined
-    const hasType = params.type !== undefined
-    const hasBuilderCode = params.builderCode !== undefined
-    const hasUri = params.uri !== undefined
-    const hasWallet = params.wallet !== undefined
-    if (!hasName && !hasType && !hasBuilderCode && !hasUri && !hasWallet) {
+    if ([params.name, params.type, params.builderCode, params.uri, params.wallet].every(v => v === undefined)) {
       throw new IdentityTxFailed('No fields provided to update')
     }
 
     return withIdentityTx(config, params.address, params.password, async (ctx) => {
-      const txHashes: string[] = []
       const id = BigInt(params.agentId)
-      const result: UpdateResult = { agentId: params.agentId, txHashes }
+      const registry = ctx.identityCfg.identityRegistry
 
-      // Per-key metadata updates (NO merge needed — each key is independent)
+      // Phase 1: send all metadata + URI txs sequentially (nonce ordering)
+      const pendingHashes: `0x${string}`[] = []
+
       for (const [key, value] of [
-        ['name', params.name],
-        ['agentType', params.type],
-        ['builderCode', params.builderCode],
+        [METADATA_KEYS.NAME, params.name],
+        [METADATA_KEYS.AGENT_TYPE, params.type],
+        [METADATA_KEYS.BUILDER_CODE, params.builderCode],
       ] as const) {
         if (value !== undefined) {
           const txHash = await ctx.walletClient.writeContract({
-            chain: ctx.chain,
-            account: ctx.account,
-            address: ctx.identityRegistry,
-            abi: IDENTITY_REGISTRY_ABI,
+            chain: ctx.chain, account: ctx.account,
+            address: registry, abi: IDENTITY_REGISTRY_ABI,
             functionName: 'setMetadata',
             args: [id, key, encodeStringMetadata(value)],
           })
-          await ctx.publicClient.waitForTransactionReceipt({ hash: txHash })
-          txHashes.push(txHash)
+          pendingHashes.push(txHash)
         }
       }
 
-      // URI update
-      if (hasUri) {
+      if (params.uri !== undefined) {
         const txHash = await ctx.walletClient.writeContract({
-          chain: ctx.chain,
-          account: ctx.account,
-          address: ctx.identityRegistry,
-          abi: IDENTITY_REGISTRY_ABI,
+          chain: ctx.chain, account: ctx.account,
+          address: registry, abi: IDENTITY_REGISTRY_ABI,
           functionName: 'setAgentURI',
-          args: [id, params.uri!],
+          args: [id, params.uri],
         })
-        await ctx.publicClient.waitForTransactionReceipt({ hash: txHash })
-        txHashes.push(txHash)
+        pendingHashes.push(txHash)
       }
 
-      // Wallet link (same EIP-712 flow as register)
-      if (hasWallet) {
-        if (params.wallet!.toLowerCase() === ctx.account.address.toLowerCase()) {
-          const deadline = walletLinkDeadline()
-          const signature = await signWalletLink({
-            account: ctx.account,
-            agentId: id,
-            newWallet: params.wallet as `0x${string}`,
-            ownerAddress: ctx.account.address,
-            deadline,
-            chainId: ctx.identityCfg.chainId,
-            verifyingContract: ctx.identityRegistry,
-          })
-          const txHash = await ctx.walletClient.writeContract({
-            chain: ctx.chain,
-            account: ctx.account,
-            address: ctx.identityRegistry,
-            abi: IDENTITY_REGISTRY_ABI,
-            functionName: 'setAgentWallet',
-            args: [id, params.wallet as `0x${string}`, deadline, signature],
-          })
-          await ctx.publicClient.waitForTransactionReceipt({ hash: txHash })
-          result.walletTxHash = txHash
-        } else {
-          result.walletLinkSkipped = true
-          result.walletLinkReason = 'Wallet differs from signer. Link manually with the wallet\'s private key.'
-        }
-      }
+      // Phase 2: wait for all receipts in parallel
+      await Promise.all(pendingHashes.map(h => ctx.publicClient.waitForTransactionReceipt({ hash: h })))
 
-      return result
+      const walletResult = await linkWalletIfSelf(ctx, id, params.wallet)
+
+      return {
+        agentId: params.agentId,
+        txHashes: pendingHashes,
+        ...walletResult,
+      }
     })
   },
 
@@ -279,7 +257,7 @@ export const identity = {
       const txHash = await ctx.walletClient.writeContract({
         chain: ctx.chain,
         account: ctx.account,
-        address: ctx.identityRegistry,
+        address: ctx.identityCfg.identityRegistry,
         abi: IDENTITY_REGISTRY_ABI,
         functionName: 'deregister',
         args: [BigInt(params.agentId)],
