@@ -13,7 +13,7 @@
  * They run sequentially so each step can use the previous step's result.
  */
 import { describe, it, expect } from 'vitest'
-import { getEthereumAddress } from '@injectivelabs/sdk-ts'
+import { privateKeyToAccount } from 'viem/accounts'
 
 import { createConfig } from '../config/index.js'
 import { identity } from '../identity/index.js'
@@ -36,7 +36,11 @@ describe('identity integration', () => {
     const pk = getTestPrivateKey()
     const importResult = wallets.import(pk, testPassword, 'identity-integration-test')
     testAddress = importResult.address
-    testEvmAddress = getEthereumAddress(testAddress)
+
+    // Derive EVM address from the private key using viem
+    const evmAccount = privateKeyToAccount(pk as `0x${string}`)
+    testEvmAddress = evmAccount.address
+
     expect(testAddress).toMatch(/^inj1/)
     expect(testEvmAddress).toMatch(/^0x/)
   })
@@ -46,27 +50,33 @@ describe('identity integration', () => {
       address: testAddress,
       password: testPassword,
       name: 'IntegrationTestBot',
-      type: 1,
-      builderCode: '0x' + '00'.repeat(31) + '01',
+      type: 'trading',
+      builderCode: 'test-builder',
       wallet: testEvmAddress,
-      uri: '',
     })
 
     expect(result.txHash).toMatch(TX_HASH_RE)
     expect(result.agentId).toBeDefined()
+    // Self-link should succeed (wallet = own EVM address)
+    expect(result.walletTxHash).toMatch(TX_HASH_RE)
+    expect(result.walletLinkSkipped).toBeUndefined()
     agentId = result.agentId
   }, 60_000)
 
-  it('reads agent status', async () => {
+  it('reads agent status and verifies metadata decoding', async () => {
     const result = await identityRead.status(config, { agentId })
 
     expect(result.agentId).toBe(agentId)
+    // name comes from getMetadata('name') decoded
     expect(result.name).toBe('IntegrationTestBot')
-    expect(result.agentType).toBe(1)
+    // agentType is a string from getMetadata('agentType') decoded
+    expect(result.agentType).toBe('trading')
+    expect(result.builderCode).toBe('test-builder')
     expect(result.owner).toMatch(/^0x/)
+    expect(result.linkedWallet.toLowerCase()).toBe(testEvmAddress.toLowerCase())
   }, 30_000)
 
-  it('updates agent name', async () => {
+  it('updates agent name via setMetadata', async () => {
     const result = await identity.update(config, {
       address: testAddress,
       password: testPassword,
@@ -76,14 +86,20 @@ describe('identity integration', () => {
 
     expect(result.txHashes).toHaveLength(1)
     expect(result.txHashes[0]).toMatch(TX_HASH_RE)
+
+    // Verify the update took effect
+    const status = await identityRead.status(config, { agentId })
+    expect(status.name).toBe('UpdatedTestBot')
   }, 60_000)
 
-  it('lists agents (includes our agent)', async () => {
+  it('lists agents and finds ours', async () => {
     const result = await identityRead.list(config, { limit: 50 })
 
     expect(result.agents.length).toBeGreaterThan(0)
     const found = result.agents.find(a => a.agentId === agentId)
     expect(found).toBeDefined()
+    expect(found!.name).toBe('UpdatedTestBot')
+    expect(found!.agentType).toBe('trading')
   }, 60_000)
 
   it('deregisters the agent', async () => {

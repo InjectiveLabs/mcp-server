@@ -15,9 +15,9 @@ export interface IdentityConfig {
 
 const TESTNET: IdentityConfig = {
   chainId: 1439,
-  rpcUrl: 'https://k8s.testnet.json-rpc.injective.network',
-  identityRegistry: '0x0000000000000000000000000000000000000001', // TODO: real address
-  reputationRegistry: '0x0000000000000000000000000000000000000002', // TODO: real address
+  rpcUrl: 'https://testnet.sentry.chain.json-rpc.injective.network',
+  identityRegistry: '0x19d1916ba1a2ac081b04893563a6ca0c92bc8c8e',
+  reputationRegistry: '0x019b24a73d493d86c61cc5dfea32e4865eecb922',
   deployBlock: 0n,
 }
 
