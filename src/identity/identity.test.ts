@@ -452,7 +452,7 @@ describe('identity.update', () => {
 
   it('update image fetches card, merges, uploads, calls setAgentURI', async () => {
     vi.mocked(fetchAgentCard).mockResolvedValueOnce({
-      type: 'https://erc8004.org/agent-card',
+      type: 'https://eips.ethereum.org/EIPS/eip-8004#registration-v1',
       name: 'OldBot',
       image: '',
       services: [],
@@ -485,7 +485,7 @@ describe('identity.update', () => {
 
   it('update description fetches card, merges, uploads, calls setAgentURI', async () => {
     vi.mocked(fetchAgentCard).mockResolvedValueOnce({
-      type: 'https://erc8004.org/agent-card',
+      type: 'https://eips.ethereum.org/EIPS/eip-8004#registration-v1',
       name: 'OldBot',
       image: '',
       services: [],

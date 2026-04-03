@@ -1,6 +1,6 @@
 import type { AgentCard, GenerateCardOptions, CardUpdates } from './types.js'
 
-const AGENT_CARD_TYPE = 'https://erc8004.org/agent-card'
+const AGENT_CARD_TYPE = 'https://eips.ethereum.org/EIPS/eip-8004#registration-v1'
 
 export function validateImageUrl(image: string): void {
   if (!image) return

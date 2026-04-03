@@ -18,7 +18,7 @@ describe('generateAgentCard', () => {
     expect(card.description).toBe('An automated trading agent')
     expect(card.image).toBe('https://example.com/bot.png')
     expect(card.services).toHaveLength(1)
-    expect(card.type).toBe('https://erc8004.org/agent-card')
+    expect(card.type).toBe('https://eips.ethereum.org/EIPS/eip-8004#registration-v1')
     expect(card.metadata.chain).toBe('injective')
     expect(card.metadata.chainId).toBe('1439')
     expect(card.metadata.agentType).toBe('trading')
@@ -73,7 +73,7 @@ describe('fetchAgentCard', () => {
 
   it('fetches card from IPFS gateway', async () => {
     const mockCard: AgentCard = {
-      type: 'https://erc8004.org/agent-card', name: 'Bot', image: '',
+      type: 'https://eips.ethereum.org/EIPS/eip-8004#registration-v1', name: 'Bot', image: '',
       services: [], x402Support: false,
       metadata: { chain: 'injective', chainId: '1439', agentType: 'trading', builderCode: 'x', operatorAddress: '0x1' },
     }
@@ -106,7 +106,7 @@ describe('fetchAgentCard', () => {
 
 describe('mergeAgentCard', () => {
   const base: AgentCard = {
-    type: 'https://erc8004.org/agent-card', name: 'Bot', description: 'Old desc',
+    type: 'https://eips.ethereum.org/EIPS/eip-8004#registration-v1', name: 'Bot', description: 'Old desc',
     image: 'https://old.png', services: [{ type: 'mcp', url: 'https://mcp.old' }],
     x402Support: false,
     metadata: { chain: 'injective', chainId: '1439', agentType: 'trading', builderCode: 'x', operatorAddress: '0x1' },
