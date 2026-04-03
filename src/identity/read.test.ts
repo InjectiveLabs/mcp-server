@@ -47,14 +47,10 @@ describe('identityRead.status', () => {
   beforeEach(() => {
     vi.clearAllMocks()
 
-    // Mock the 7 readContract calls in sequence:
-    // 1. getMetadata(id, 'name') → encoded name bytes
-    // 2. getMetadata(id, 'builderCode') → encoded builderCode bytes
-    // 3. getMetadata(id, 'agentType') → encoded agentType bytes
-    // 4. ownerOf → owner address
-    // 5. tokenURI → URI string
-    // 6. getAgentWallet → wallet address
-    // 7. getSummary → [count, summaryValue, summaryValueDecimals]
+    // Mock the 6 readContract calls in Promise.all, then 2 sequential reputation calls:
+    // 1-6: getMetadata(name), getMetadata(builderCode), getMetadata(agentType), ownerOf, tokenURI, getAgentWallet
+    // 7: getClients → client addresses
+    // 8: getSummary → [count, summaryValue, decimals]
     mockReadContract
       .mockResolvedValueOnce(ENCODED_NAME)
       .mockResolvedValueOnce(ENCODED_BUILDER_CODE)
@@ -62,7 +58,8 @@ describe('identityRead.status', () => {
       .mockResolvedValueOnce(OWNER_ADDRESS)
       .mockResolvedValueOnce(TOKEN_URI)
       .mockResolvedValueOnce(LINKED_WALLET)
-      .mockResolvedValueOnce([REPUTATION_COUNT, REPUTATION_VALUE, REPUTATION_DECIMALS])
+      .mockResolvedValueOnce([OWNER_ADDRESS])  // getClients
+      .mockResolvedValueOnce([REPUTATION_COUNT, REPUTATION_VALUE, REPUTATION_DECIMALS])  // getSummary
   })
 
   it('returns full agent details including reputation', async () => {
@@ -93,7 +90,8 @@ describe('identityRead.status', () => {
       .mockResolvedValueOnce(OWNER_ADDRESS)
       .mockResolvedValueOnce(TOKEN_URI)
       .mockResolvedValueOnce(LINKED_WALLET)
-      .mockResolvedValueOnce([10n, 4500n, 2])
+      .mockResolvedValueOnce([OWNER_ADDRESS])  // getClients
+      .mockResolvedValueOnce([10n, 4500n, 2])  // getSummary
 
     const result = await identityRead.status(config, { agentId: AGENT_ID })
 
@@ -112,7 +110,7 @@ describe('identityRead.status', () => {
       .mockResolvedValueOnce(OWNER_ADDRESS)
       .mockResolvedValueOnce(TOKEN_URI)
       .mockResolvedValueOnce(LINKED_WALLET)
-      .mockResolvedValueOnce([0n, 0n, 0])
+      .mockResolvedValueOnce([])  // getClients → empty (no feedback)
 
     const result = await identityRead.status(config, { agentId: AGENT_ID })
 
@@ -350,11 +348,10 @@ describe('identityRead.reputation', () => {
   })
 
   it('returns normalized score and clients', async () => {
-    // getSummary returns [count, summaryValue, summaryValueDecimals]
-    // getClients returns address array
+    // 1. getClients returns address array, 2. getSummary returns [count, summaryValue, decimals]
     mockReadContract
-      .mockResolvedValueOnce([5n, 4500n, 2])
       .mockResolvedValueOnce(['0x' + 'aa'.repeat(20), '0x' + 'bb'.repeat(20)])
+      .mockResolvedValueOnce([5n, 4500n, 2])
 
     const result = await identityRead.reputation(config, { agentId: AGENT_ID })
 
@@ -381,8 +378,8 @@ describe('identityRead.reputation', () => {
 
   it('passes filter params correctly', async () => {
     mockReadContract
-      .mockResolvedValueOnce([1n, 100n, 0])
-      .mockResolvedValueOnce(['0x' + 'cc'.repeat(20)])
+      .mockResolvedValueOnce(['0x' + 'cc'.repeat(20)])  // getClients
+      .mockResolvedValueOnce([1n, 100n, 0])              // getSummary
 
     const clientAddresses = ['0x' + 'cc'.repeat(20)]
     await identityRead.reputation(config, {

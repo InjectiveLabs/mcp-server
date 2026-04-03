@@ -426,18 +426,16 @@ export const identity = {
 
       const receipt = await ctx.publicClient.waitForTransactionReceipt({ hash: txHash })
 
-      // Extract feedbackIndex from NewFeedback event
+      // Extract feedbackIndex from NewFeedback event data (first 32-byte word)
       let feedbackIndex: string | undefined
       const registryAddr = ctx.identityCfg.reputationRegistry.toLowerCase()
       for (const log of receipt.logs) {
         if (
           log.address?.toLowerCase() === registryAddr &&
-          log.topics.length === 3 && // NewFeedback: [sig, agentId(indexed), client(indexed)]
           log.data &&
-          log.data !== '0x'
+          log.data.length >= 66 // at least 0x + 64 hex chars (32 bytes)
         ) {
-          // feedbackIndex is a non-indexed uint64 in log data
-          feedbackIndex = BigInt(log.data).toString()
+          feedbackIndex = BigInt(log.data.slice(0, 66)).toString()
           break
         }
       }

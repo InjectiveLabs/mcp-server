@@ -95,7 +95,7 @@ export const identityRead = {
     const tokenId = BigInt(params.agentId)
 
     try {
-      const [nameRaw, builderCodeRaw, agentTypeRaw, owner, tokenURI, linkedWallet, reputation] = await Promise.all([
+      const [nameRaw, builderCodeRaw, agentTypeRaw, owner, tokenURI, linkedWallet] = await Promise.all([
         publicClient.readContract({
           address: identityCfg.identityRegistry,
           abi: IDENTITY_REGISTRY_ABI,
@@ -132,18 +132,39 @@ export const identityRead = {
           functionName: 'getAgentWallet',
           args: [tokenId],
         }) as Promise<string>,
-        // Reputation may not exist for new agents — return zeros on revert
-        publicClient.readContract({
-          address: identityCfg.reputationRegistry,
-          abi: REPUTATION_REGISTRY_ABI,
-          functionName: 'getSummary',
-          args: [tokenId, [], '', ''],
-        }).catch(() => [0n, 0n, 0]) as Promise<[bigint, bigint, number]>,
       ])
 
       const name = decodeStringMetadata(nameRaw)
       const builderCode = decodeStringMetadata(builderCodeRaw)
       const agentType = decodeStringMetadata(agentTypeRaw)
+
+      // Reputation: getSummary requires client addresses, so fetch clients first
+      let reputationScore = '0'
+      let reputationCount = '0'
+      try {
+        const clients = await publicClient.readContract({
+          address: identityCfg.reputationRegistry,
+          abi: REPUTATION_REGISTRY_ABI,
+          functionName: 'getClients',
+          args: [tokenId],
+        }) as `0x${string}`[]
+
+        if (clients.length > 0) {
+          const [count, summaryValue, decimals] = await publicClient.readContract({
+            address: identityCfg.reputationRegistry,
+            abi: REPUTATION_REGISTRY_ABI,
+            functionName: 'getSummary',
+            args: [tokenId, clients, '', ''],
+          }) as [bigint, bigint, number]
+
+          reputationCount = Number(count).toString()
+          reputationScore = summaryValue !== 0n
+            ? (Number(summaryValue) / Math.pow(10, Number(decimals))).toString()
+            : '0'
+        }
+      } catch {
+        // No reputation data — leave as zeros
+      }
 
       return {
         agentId: params.agentId,
@@ -154,10 +175,8 @@ export const identityRead = {
         tokenURI,
         linkedWallet,
         reputation: {
-          score: reputation[1] !== 0n
-            ? (Number(reputation[1]) / Math.pow(10, Number(reputation[2]))).toString()
-            : '0',
-          count: Number(reputation[0]).toString(),
+          score: reputationScore,
+          count: reputationCount,
         },
       }
     } catch (err) {
@@ -277,22 +296,29 @@ export const identityRead = {
     const tokenId = BigInt(params.agentId)
 
     try {
-      const [summary, clients] = await Promise.all([
-        publicClient.readContract({
-          address: identityCfg.reputationRegistry,
-          abi: REPUTATION_REGISTRY_ABI,
-          functionName: 'getSummary',
-          args: [tokenId, (params.clientAddresses ?? []) as `0x${string}`[], params.tag1 ?? '', params.tag2 ?? ''],
-        }) as Promise<[bigint, bigint, number]>,
-        publicClient.readContract({
-          address: identityCfg.reputationRegistry,
-          abi: REPUTATION_REGISTRY_ABI,
-          functionName: 'getClients',
-          args: [tokenId],
-        }) as Promise<string[]>,
-      ])
+      // getSummary requires client addresses — fetch them first if not provided
+      const clients = await publicClient.readContract({
+        address: identityCfg.reputationRegistry,
+        abi: REPUTATION_REGISTRY_ABI,
+        functionName: 'getClients',
+        args: [tokenId],
+      }) as `0x${string}`[]
 
-      const [count, summaryValue, summaryValueDecimals] = summary
+      if (clients.length === 0) {
+        return { agentId: params.agentId, score: 0, count: 0, clients: [] }
+      }
+
+      const summaryClients = params.clientAddresses?.length
+        ? params.clientAddresses as `0x${string}`[]
+        : clients
+
+      const [count, summaryValue, summaryValueDecimals] = await publicClient.readContract({
+        address: identityCfg.reputationRegistry,
+        abi: REPUTATION_REGISTRY_ABI,
+        functionName: 'getSummary',
+        args: [tokenId, summaryClients, params.tag1 ?? '', params.tag2 ?? ''],
+      }) as [bigint, bigint, number]
+
       const score = Number(count) > 0
         ? Number(summaryValue) / Math.pow(10, Number(summaryValueDecimals))
         : 0
@@ -301,7 +327,7 @@ export const identityRead = {
         agentId: params.agentId,
         score,
         count: Number(count),
-        clients,
+        clients: clients as string[],
       }
     } catch {
       return { agentId: params.agentId, score: 0, count: 0, clients: [] }
