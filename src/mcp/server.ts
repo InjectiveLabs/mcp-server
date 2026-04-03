@@ -815,15 +815,14 @@ server.tool(
 
 server.tool(
   'agent_register',
-  'Register a new AI agent identity on the Injective ERC-8004 registry. Mints an NFT that gives your agent on-chain identity, discoverability, and reputation tracking. IMPORTANT: This is a real on-chain transaction that costs gas.',
+  'Register a new AI agent identity on the Injective ERC-8004 registry. Mints an NFT that gives your agent on-chain identity, discoverability, and reputation tracking. Wallet linking only works when the wallet address matches the keystore address (same key). IMPORTANT: This is a real on-chain transaction that costs gas.',
   {
     address: injAddress.describe('Your inj1... address (must be in local keystore).'),
     password: z.string().describe('Keystore password to decrypt the signing key.'),
     name: z.string().min(1).describe('Human-readable agent name.'),
-    type: z.number().int().min(0).max(255).describe('Agent type code (uint8). E.g., 1 = trading, 2 = analytics.'),
-    builderCode: z.string().regex(/^0x[a-fA-F0-9]{64}$/, 'Must be a 32-byte hex string (0x-prefixed, 66 chars)')
-      .describe('Builder identifier (bytes32).'),
-    wallet: ethAddress.describe('EVM wallet address to link to this agent identity.'),
+    type: z.string().min(1).describe('Agent type (e.g., "trading", "analytics", "data").'),
+    builderCode: z.string().min(1).describe('Builder identifier string.'),
+    wallet: ethAddress.optional().describe('EVM wallet to link. Only works if it matches the keystore address (same key). Omit to skip.'),
     uri: z.string().optional().describe('Token URI (e.g., IPFS link to agent card JSON). Can be set later via agent_update.'),
   },
   async ({ address, password, name, type, builderCode, wallet, uri }) => {
@@ -847,11 +846,10 @@ server.tool(
     password: z.string().describe('Keystore password to decrypt the signing key.'),
     agentId: z.string().min(1).describe('The numeric agent ID (from agent_register).'),
     name: z.string().min(1).optional().describe('New agent name.'),
-    type: z.number().int().min(0).max(255).optional().describe('New agent type code.'),
-    builderCode: z.string().regex(/^0x[a-fA-F0-9]{64}$/).optional()
-      .describe('New builder identifier (bytes32).'),
+    type: z.string().min(1).optional().describe('New agent type (e.g., "trading", "analytics").'),
+    builderCode: z.string().min(1).optional().describe('New builder identifier string.'),
     uri: z.string().optional().describe('New token URI (e.g., IPFS link).'),
-    wallet: ethAddress.optional().describe('New linked EVM wallet address.'),
+    wallet: ethAddress.optional().describe('New linked EVM wallet. Only works if it matches the keystore address.'),
   },
   async ({ address, password, agentId, name, type, builderCode, uri, wallet }) => {
     const result = await identity.update(config, {
@@ -910,7 +908,7 @@ server.tool(
   'Find registered agents on Injective. Filter by owner address or agent type. Returns agent IDs with summary metadata. Read-only, no gas cost.',
   {
     owner: z.string().optional().describe('Filter by owner — accepts inj1... or 0x... address.'),
-    type: z.number().int().min(0).max(255).optional().describe('Filter by agent type code.'),
+    type: z.string().optional().describe('Filter by agent type (e.g., "trading", "analytics").'),
     limit: z.number().int().min(1).max(100).optional().describe('Max agents to return (default 20, max 100).'),
   },
   async ({ owner, type, limit }) => {
