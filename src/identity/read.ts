@@ -2,6 +2,7 @@
  * Identity read handlers — query agent status and list registered agents
  * from the ERC-8004 IdentityRegistry contract via Injective EVM (read-only).
  */
+import type { Hex } from 'viem'
 import { zeroAddress } from 'viem'
 import { evm } from '../evm/index.js'
 import type { Config } from '../config/index.js'
@@ -9,6 +10,7 @@ import { createIdentityPublicClient } from './client.js'
 import { getIdentityConfig } from './config.js'
 import { IDENTITY_REGISTRY_ABI, REPUTATION_REGISTRY_ABI } from './abis.js'
 import { IdentityNotFound, IdentityTxFailed } from '../errors/index.js'
+import { decodeStringMetadata } from './helpers.js'
 
 // ─── Parameter / result types ───────────────────────────────────────────────
 
@@ -19,7 +21,7 @@ export interface StatusParams {
 export interface StatusResult {
   agentId: string
   name: string
-  agentType: number
+  agentType: string
   builderCode: string
   owner: string
   tokenURI: string
@@ -32,14 +34,14 @@ export interface StatusResult {
 
 export interface ListParams {
   owner?: string
-  type?: number
+  type?: string
   limit?: number
 }
 
 export interface ListEntry {
   agentId: string
   name: string
-  agentType: number
+  agentType: string
   owner: string
 }
 
@@ -57,13 +59,25 @@ export const identityRead = {
     const tokenId = BigInt(params.agentId)
 
     try {
-      const [metadata, owner, tokenURI, linkedWallet, reputation] = await Promise.all([
+      const [nameRaw, builderCodeRaw, agentTypeRaw, owner, tokenURI, linkedWallet, reputation] = await Promise.all([
         publicClient.readContract({
           address: identityCfg.identityRegistry,
           abi: IDENTITY_REGISTRY_ABI,
           functionName: 'getMetadata',
-          args: [tokenId],
-        }) as Promise<[string, number, string]>,
+          args: [tokenId, 'name'],
+        }) as Promise<Hex>,
+        publicClient.readContract({
+          address: identityCfg.identityRegistry,
+          abi: IDENTITY_REGISTRY_ABI,
+          functionName: 'getMetadata',
+          args: [tokenId, 'builderCode'],
+        }) as Promise<Hex>,
+        publicClient.readContract({
+          address: identityCfg.identityRegistry,
+          abi: IDENTITY_REGISTRY_ABI,
+          functionName: 'getMetadata',
+          args: [tokenId, 'agentType'],
+        }) as Promise<Hex>,
         publicClient.readContract({
           address: identityCfg.identityRegistry,
           abi: IDENTITY_REGISTRY_ABI,
@@ -79,7 +93,7 @@ export const identityRead = {
         publicClient.readContract({
           address: identityCfg.identityRegistry,
           abi: IDENTITY_REGISTRY_ABI,
-          functionName: 'getLinkedWallet',
+          functionName: 'getAgentWallet',
           args: [tokenId],
         }) as Promise<string>,
         publicClient.readContract({
@@ -90,11 +104,15 @@ export const identityRead = {
         }) as Promise<[bigint, bigint]>,
       ])
 
+      const name = decodeStringMetadata(nameRaw)
+      const builderCode = decodeStringMetadata(builderCodeRaw)
+      const agentType = decodeStringMetadata(agentTypeRaw)
+
       return {
         agentId: params.agentId,
-        name: metadata[0],
-        agentType: metadata[1],
-        builderCode: metadata[2],
+        name,
+        agentType,
+        builderCode,
         owner,
         tokenURI,
         linkedWallet,
@@ -163,13 +181,19 @@ export const identityRead = {
       // Fetch metadata for all candidates in parallel
       const results = await Promise.allSettled(
         candidateIds.map(async (tokenId) => {
-          const [metadata, currentOwner] = await Promise.all([
+          const [nameRaw, agentTypeRaw, currentOwner] = await Promise.all([
             publicClient.readContract({
               address: identityCfg.identityRegistry,
               abi: IDENTITY_REGISTRY_ABI,
               functionName: 'getMetadata',
-              args: [tokenId],
-            }) as Promise<[string, number, string]>,
+              args: [tokenId, 'name'],
+            }) as Promise<Hex>,
+            publicClient.readContract({
+              address: identityCfg.identityRegistry,
+              abi: IDENTITY_REGISTRY_ABI,
+              functionName: 'getMetadata',
+              args: [tokenId, 'agentType'],
+            }) as Promise<Hex>,
             publicClient.readContract({
               address: identityCfg.identityRegistry,
               abi: IDENTITY_REGISTRY_ABI,
@@ -177,21 +201,23 @@ export const identityRead = {
               args: [tokenId],
             }) as Promise<string>,
           ])
-          return { tokenId, metadata, currentOwner }
+          const name = decodeStringMetadata(nameRaw)
+          const agentType = decodeStringMetadata(agentTypeRaw)
+          return { tokenId, name, agentType, currentOwner }
         }),
       )
 
       const agents: ListEntry[] = []
       for (const result of results) {
         if (result.status !== 'fulfilled') continue // burned agents
-        const { tokenId, metadata, currentOwner } = result.value
+        const { tokenId, name, agentType, currentOwner } = result.value
 
-        if (params.type !== undefined && metadata[1] !== params.type) continue
+        if (params.type !== undefined && agentType !== params.type) continue
 
         agents.push({
           agentId: tokenId.toString(),
-          name: metadata[0],
-          agentType: metadata[1],
+          name,
+          agentType,
           owner: currentOwner,
         })
 

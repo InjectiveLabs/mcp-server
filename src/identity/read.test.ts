@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { testConfig } from '../test-utils/index.js'
 import { IdentityNotFound } from '../errors/index.js'
+import { encodeStringMetadata } from './helpers.js'
 
 // ─── Mocks ──────────────────────────────────────────────────────────────────
 
@@ -30,10 +31,14 @@ const config = testConfig()
 const AGENT_ID = '42'
 const OWNER_ADDRESS = '0x' + 'ff'.repeat(20)
 const LINKED_WALLET = '0x' + 'aa'.repeat(20)
-const BUILDER_CODE = '0x' + 'cc'.repeat(32)
 const TOKEN_URI = 'https://example.com/agent/42.json'
 const REPUTATION_SCORE = 9500n
 const FEEDBACK_COUNT = 120n
+
+// Pre-encoded metadata values
+const ENCODED_NAME = encodeStringMetadata('TestAgent')
+const ENCODED_BUILDER_CODE = encodeStringMetadata('builder-xyz')
+const ENCODED_AGENT_TYPE = encodeStringMetadata('autonomous')
 
 // ─── identityRead.status ────────────────────────────────────────────────────
 
@@ -41,14 +46,18 @@ describe('identityRead.status', () => {
   beforeEach(() => {
     vi.clearAllMocks()
 
-    // Mock the 5 readContract calls in sequence:
-    // 1. getMetadata → [name, agentType, builderCode]
-    // 2. ownerOf → owner address
-    // 3. tokenURI → URI string
-    // 4. getLinkedWallet → wallet address
-    // 5. getReputation → [score, feedbackCount]
+    // Mock the 7 readContract calls in sequence:
+    // 1. getMetadata(id, 'name') → encoded name bytes
+    // 2. getMetadata(id, 'builderCode') → encoded builderCode bytes
+    // 3. getMetadata(id, 'agentType') → encoded agentType bytes
+    // 4. ownerOf → owner address
+    // 5. tokenURI → URI string
+    // 6. getAgentWallet → wallet address
+    // 7. getReputation → [score, feedbackCount]
     mockReadContract
-      .mockResolvedValueOnce(['TestAgent', 1, BUILDER_CODE])
+      .mockResolvedValueOnce(ENCODED_NAME)
+      .mockResolvedValueOnce(ENCODED_BUILDER_CODE)
+      .mockResolvedValueOnce(ENCODED_AGENT_TYPE)
       .mockResolvedValueOnce(OWNER_ADDRESS)
       .mockResolvedValueOnce(TOKEN_URI)
       .mockResolvedValueOnce(LINKED_WALLET)
@@ -61,8 +70,8 @@ describe('identityRead.status', () => {
     expect(result).toEqual({
       agentId: '42',
       name: 'TestAgent',
-      agentType: 1,
-      builderCode: BUILDER_CODE,
+      agentType: 'autonomous',
+      builderCode: 'builder-xyz',
       owner: OWNER_ADDRESS,
       tokenURI: TOKEN_URI,
       linkedWallet: LINKED_WALLET,
@@ -77,7 +86,9 @@ describe('identityRead.status', () => {
     // Use very large bigint values to verify string conversion
     mockReadContract.mockReset()
     mockReadContract
-      .mockResolvedValueOnce(['BigRepAgent', 2, BUILDER_CODE])
+      .mockResolvedValueOnce(encodeStringMetadata('BigRepAgent'))
+      .mockResolvedValueOnce(ENCODED_BUILDER_CODE)
+      .mockResolvedValueOnce(ENCODED_AGENT_TYPE)
       .mockResolvedValueOnce(OWNER_ADDRESS)
       .mockResolvedValueOnce(TOKEN_URI)
       .mockResolvedValueOnce(LINKED_WALLET)
@@ -89,6 +100,24 @@ describe('identityRead.status', () => {
     expect(result.reputation.feedbackCount).toBe('1000000000000')
     expect(typeof result.reputation.score).toBe('string')
     expect(typeof result.reputation.feedbackCount).toBe('string')
+  })
+
+  it('decodes empty metadata as empty string', async () => {
+    mockReadContract.mockReset()
+    mockReadContract
+      .mockResolvedValueOnce('0x') // name → empty
+      .mockResolvedValueOnce('0x') // builderCode → empty
+      .mockResolvedValueOnce('0x') // agentType → empty
+      .mockResolvedValueOnce(OWNER_ADDRESS)
+      .mockResolvedValueOnce(TOKEN_URI)
+      .mockResolvedValueOnce(LINKED_WALLET)
+      .mockResolvedValueOnce([0n, 0n])
+
+    const result = await identityRead.status(config, { agentId: AGENT_ID })
+
+    expect(result.name).toBe('')
+    expect(result.builderCode).toBe('')
+    expect(result.agentType).toBe('')
   })
 
   it('throws IdentityNotFound when readContract fails with ERC721 error', async () => {
@@ -160,11 +189,17 @@ describe('identityRead.list', () => {
       makeMintLog(3n, '0x' + 'bb'.repeat(20)),
     ])
 
-    // Default readContract mock: getMetadata + ownerOf for each token
-    mockReadContract.mockImplementation(async (call: { functionName: string; args: [bigint] }) => {
+    // Default readContract mock: per-key getMetadata + ownerOf for each token
+    mockReadContract.mockImplementation(async (call: { functionName: string; args: unknown[] }) => {
       const id = Number(call.args[0])
       if (call.functionName === 'getMetadata') {
-        return [`Agent${id}`, id % 3, '0x' + '00'.repeat(32)]
+        const key = call.args[1] as string
+        if (key === 'name') return encodeStringMetadata(`Agent${id}`)
+        if (key === 'agentType') {
+          const types = ['typeC', 'typeA', 'typeB']
+          return encodeStringMetadata(types[id % 3]!)
+        }
+        return '0x'
       }
       if (call.functionName === 'ownerOf') {
         return id <= 2 ? OWNER_ADDRESS : '0x' + 'bb'.repeat(20)
@@ -181,18 +216,18 @@ describe('identityRead.list', () => {
     expect(result.agents[0]).toEqual({
       agentId: '1',
       name: 'Agent1',
-      agentType: 1,
+      agentType: 'typeA',
       owner: OWNER_ADDRESS,
     })
   })
 
   it('filters by agent type', async () => {
-    // Agent1 has type 1, Agent2 has type 2, Agent3 has type 0
-    const result = await identityRead.list(config, { type: 1 })
+    // Agent1 has typeA, Agent2 has typeB, Agent3 has typeC
+    const result = await identityRead.list(config, { type: 'typeA' })
 
     expect(result.agents).toHaveLength(1)
     expect(result.agents[0]!.agentId).toBe('1')
-    expect(result.agents[0]!.agentType).toBe(1)
+    expect(result.agents[0]!.agentType).toBe('typeA')
   })
 
   it('filters by owner address', async () => {
@@ -217,11 +252,14 @@ describe('identityRead.list', () => {
 
   it('skips burned agents when readContract throws', async () => {
     // Token 2 is burned (readContract reverts)
-    mockReadContract.mockImplementation(async (call: { functionName: string; args: [bigint] }) => {
+    mockReadContract.mockImplementation(async (call: { functionName: string; args: unknown[] }) => {
       const id = Number(call.args[0])
       if (id === 2) throw new Error('ERC721: invalid token ID')
       if (call.functionName === 'getMetadata') {
-        return [`Agent${id}`, 1, '0x' + '00'.repeat(32)]
+        const key = call.args[1] as string
+        if (key === 'name') return encodeStringMetadata(`Agent${id}`)
+        if (key === 'agentType') return encodeStringMetadata('typeA')
+        return '0x'
       }
       if (call.functionName === 'ownerOf') {
         return OWNER_ADDRESS
@@ -246,9 +284,12 @@ describe('identityRead.list', () => {
       makeMintLog(11n, '0x' + 'dd'.repeat(20)),
     ])
 
-    mockReadContract.mockImplementation(async (call: { functionName: string; args: [bigint] }) => {
+    mockReadContract.mockImplementation(async (call: { functionName: string; args: unknown[] }) => {
       if (call.functionName === 'getMetadata') {
-        return ['InjAgent', 1, '0x' + '00'.repeat(32)]
+        const key = call.args[1] as string
+        if (key === 'name') return encodeStringMetadata('InjAgent')
+        if (key === 'agentType') return encodeStringMetadata('typeA')
+        return '0x'
       }
       if (call.functionName === 'ownerOf') {
         return convertedAddress
@@ -270,10 +311,13 @@ describe('identityRead.list', () => {
     )
     mockGetLogs.mockResolvedValue(manyLogs)
 
-    mockReadContract.mockImplementation(async (call: { functionName: string; args: [bigint] }) => {
+    mockReadContract.mockImplementation(async (call: { functionName: string; args: unknown[] }) => {
       const id = Number(call.args[0])
       if (call.functionName === 'getMetadata') {
-        return [`Agent${id}`, 0, '0x' + '00'.repeat(32)]
+        const key = call.args[1] as string
+        if (key === 'name') return encodeStringMetadata(`Agent${id}`)
+        if (key === 'agentType') return encodeStringMetadata('typeA')
+        return '0x'
       }
       if (call.functionName === 'ownerOf') {
         return OWNER_ADDRESS
