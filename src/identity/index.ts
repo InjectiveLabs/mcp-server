@@ -7,6 +7,7 @@
  */
 import type { Config } from '../config/index.js'
 import type { PublicClient, WalletClient, Account, Chain } from 'viem'
+import { keccak256, toHex } from 'viem'
 import type { ServiceEntry } from './types.js'
 import { wallets } from '../wallets/index.js'
 import { createIdentityWalletClient, createIdentityPublicClient } from './client.js'
@@ -16,6 +17,10 @@ import { encodeStringMetadata, walletLinkDeadline, signWalletLink, METADATA_KEYS
 import { IdentityTxFailed, DeregisterNotConfirmed } from '../errors/index.js'
 import { generateAgentCard, fetchAgentCard, mergeAgentCard } from './card.js'
 import { PinataStorage, StorageError } from './storage.js'
+
+const NEW_FEEDBACK_EVENT_TOPIC = keccak256(
+  toHex('NewFeedback(uint256,address,uint256,uint256,uint8,string,string)'),
+)
 
 // ─── Parameter / result types ───────────────────────────────────────────────
 
@@ -432,8 +437,9 @@ export const identity = {
       for (const log of receipt.logs) {
         if (
           log.address?.toLowerCase() === registryAddr &&
+          log.topics?.[0] === NEW_FEEDBACK_EVENT_TOPIC &&
           log.data &&
-          log.data.length >= 66 // at least 0x + 64 hex chars (32 bytes)
+          log.data.length >= 66
         ) {
           feedbackIndex = BigInt(log.data.slice(0, 66)).toString()
           break

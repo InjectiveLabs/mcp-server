@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { keccak256, toHex } from 'viem'
 import { testConfig } from '../test-utils/index.js'
 import { IdentityTxFailed, DeregisterNotConfirmed } from '../errors/index.js'
 import { encodeStringMetadata } from './helpers.js'
@@ -622,7 +623,7 @@ const FEEDBACK_RECEIPT = {
     {
       address: TEST_REPUTATION_REGISTRY,
       topics: [
-        '0x' + 'cc'.repeat(32),  // event signature
+        keccak256(toHex('NewFeedback(uint256,address,uint256,uint256,uint8,string,string)')),  // event signature
         '0x' + '00'.repeat(31) + '2a', // indexed agentId (42)
         '0x' + '00'.repeat(12) + 'ff'.repeat(20), // indexed client
       ],
