@@ -80,13 +80,13 @@ describe('fetchAgentCard', () => {
     mockFetch.mockResolvedValue({ ok: true, json: async () => mockCard })
     const card = await fetchAgentCard('ipfs://QmTest', 'https://w3s.link/ipfs/')
     expect(card).toEqual(mockCard)
-    expect(mockFetch).toHaveBeenCalledWith('https://w3s.link/ipfs/QmTest')
+    expect(mockFetch).toHaveBeenCalledWith('https://w3s.link/ipfs/QmTest', expect.objectContaining({ signal: expect.any(AbortSignal) }))
   })
 
   it('fetches from https:// URI directly', async () => {
     mockFetch.mockResolvedValue({ ok: true, json: async () => ({ name: 'Bot' }) })
     await fetchAgentCard('https://example.com/card.json', 'https://w3s.link/ipfs/')
-    expect(mockFetch).toHaveBeenCalledWith('https://example.com/card.json')
+    expect(mockFetch).toHaveBeenCalledWith('https://example.com/card.json', expect.objectContaining({ signal: expect.any(AbortSignal) }))
   })
 
   it('returns null on fetch failure', async () => {
@@ -98,9 +98,9 @@ describe('fetchAgentCard', () => {
     expect(await fetchAgentCard('', 'https://w3s.link/ipfs/')).toBeNull()
   })
 
-  it('returns null on network error', async () => {
+  it('throws on network error', async () => {
     mockFetch.mockRejectedValue(new Error('timeout'))
-    expect(await fetchAgentCard('ipfs://QmTest', 'https://w3s.link/ipfs/')).toBeNull()
+    await expect(fetchAgentCard('ipfs://QmTest', 'https://w3s.link/ipfs/')).rejects.toThrow('timeout')
   })
 })
 

@@ -33,21 +33,23 @@ export function generateAgentCard(opts: GenerateCardOptions): AgentCard {
   return card
 }
 
+export function resolveIpfsUri(uri: string, ipfsGateway: string): string {
+  if (uri.startsWith('ipfs://')) {
+    const gateway = ipfsGateway.endsWith('/') ? ipfsGateway : `${ipfsGateway}/`
+    return `${gateway}${uri.slice('ipfs://'.length)}`
+  }
+  return uri
+}
+
 export async function fetchAgentCard(
   uri: string,
   ipfsGateway: string,
 ): Promise<AgentCard | null> {
   if (!uri) return null
-  try {
-    const url = uri.startsWith('ipfs://')
-      ? `${ipfsGateway}${uri.slice('ipfs://'.length)}`
-      : uri
-    const response = await fetch(url)
-    if (!response.ok) return null
-    return (await response.json()) as AgentCard
-  } catch {
-    return null
-  }
+  const url = resolveIpfsUri(uri, ipfsGateway)
+  const response = await fetch(url, { signal: AbortSignal.timeout(15_000) })
+  if (!response.ok) return null
+  return (await response.json()) as AgentCard
 }
 
 export function mergeAgentCard(existing: AgentCard, updates: CardUpdates): AgentCard {

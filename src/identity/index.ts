@@ -14,8 +14,8 @@ import { getIdentityConfig, getPinataJwt, type IdentityConfig } from './config.j
 import { IDENTITY_REGISTRY_ABI } from './abis.js'
 import { encodeStringMetadata, walletLinkDeadline, signWalletLink, METADATA_KEYS } from './helpers.js'
 import { IdentityTxFailed, DeregisterNotConfirmed } from '../errors/index.js'
-import { generateAgentCard, validateImageUrl, fetchAgentCard, mergeAgentCard } from './card.js'
-import { PinataStorage } from './storage.js'
+import { generateAgentCard, fetchAgentCard, mergeAgentCard } from './card.js'
+import { PinataStorage, StorageError } from './storage.js'
 
 // ─── Parameter / result types ───────────────────────────────────────────────
 
@@ -111,7 +111,7 @@ async function withIdentityTx<T>(
       identityCfg,
     })
   } catch (err) {
-    if (err instanceof IdentityTxFailed) throw err
+    if (err instanceof IdentityTxFailed || err instanceof StorageError) throw err
     const message = err instanceof Error ? err.message : String(err)
     throw new IdentityTxFailed(message)
   }
@@ -161,26 +161,26 @@ async function linkWalletIfSelf(
   return { walletTxHash }
 }
 
+function requirePinataJwt(): string {
+  const jwt = getPinataJwt()
+  if (!jwt) {
+    throw new IdentityTxFailed(
+      'IPFS storage not configured. Set PINATA_JWT environment variable or provide a uri parameter.',
+    )
+  }
+  return jwt
+}
+
 // ─── Handlers ───────────────────────────────────────────────────────────────
 
 export const identity = {
   async register(config: Config, params: RegisterParams): Promise<RegisterResult> {
-    // Card generation step (before withIdentityTx to fail fast on missing JWT)
+    // Fail fast: validate JWT before decrypting the key
+    const jwt = !params.uri ? requirePinataJwt() : undefined
     let cardUri = params.uri ?? ''
 
-    if (!params.uri) {
-      const jwt = getPinataJwt()
-      if (!jwt) {
-        throw new IdentityTxFailed(
-          'IPFS storage not configured. Set PINATA_JWT environment variable or provide a uri parameter.'
-        )
-      }
-      if (params.image) validateImageUrl(params.image)
-    }
-
     return withIdentityTx(config, params.address, params.password, async (ctx) => {
-      // Build and upload card if no URI provided
-      if (!params.uri) {
+      if (jwt) {
         const card = generateAgentCard({
           name: params.name,
           agentType: params.type,
@@ -191,7 +191,7 @@ export const identity = {
           image: params.image,
           services: params.services,
         })
-        const storage = new PinataStorage(getPinataJwt()!)
+        const storage = new PinataStorage(jwt)
         cardUri = await storage.uploadJSON(card, `agent-card-${params.name}`)
       }
 
@@ -250,6 +250,9 @@ export const identity = {
       throw new IdentityTxFailed('No fields provided to update')
     }
 
+    // Fail fast: validate JWT before decrypting the key
+    const jwt = (hasCardUpdate && !params.uri) ? requirePinataJwt() : undefined
+
     return withIdentityTx(config, params.address, params.password, async (ctx) => {
       const id = BigInt(params.agentId)
       const registry = ctx.identityCfg.identityRegistry
@@ -285,15 +288,7 @@ export const identity = {
       }
 
       // Card update: fetch existing card, merge, re-upload
-      if (hasCardUpdate && !params.uri) {
-        const jwt = getPinataJwt()
-        if (!jwt) {
-          throw new IdentityTxFailed(
-            'IPFS storage not configured. Set PINATA_JWT environment variable or provide a uri parameter.'
-          )
-        }
-        if (params.image) validateImageUrl(params.image)
-
+      if (jwt) {
         // Fetch existing card
         const tokenURI = await ctx.publicClient.readContract({
           address: ctx.identityCfg.identityRegistry,
@@ -302,7 +297,12 @@ export const identity = {
           args: [id],
         }) as string
 
-        let card = await fetchAgentCard(tokenURI, ctx.identityCfg.ipfsGateway)
+        let card: import('./types.js').AgentCard | null = null
+        try {
+          card = await fetchAgentCard(tokenURI, ctx.identityCfg.ipfsGateway)
+        } catch {
+          // Gateway unreachable — build fresh card rather than failing the update
+        }
 
         if (card) {
           card = mergeAgentCard(card, {

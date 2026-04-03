@@ -265,7 +265,7 @@ describe('identity.register', () => {
   })
 
   it('register with invalid image URL throws validation error', async () => {
-    vi.mocked(validateImageUrl).mockImplementationOnce(() => {
+    vi.mocked(generateAgentCard).mockImplementationOnce(() => {
       throw new Error('Image must be a URL (https://, http://, or ipfs://). Local file paths are not supported in MCP.')
     })
 
