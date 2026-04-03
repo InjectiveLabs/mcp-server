@@ -1,12 +1,15 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { testConfig } from '../test-utils/index.js'
 import { IdentityTxFailed, DeregisterNotConfirmed } from '../errors/index.js'
+import { encodeStringMetadata } from './helpers.js'
 
 // ─── Mocks ──────────────────────────────────────────────────────────────────
 
 const mockWriteContract = vi.fn()
 const mockWaitForTransactionReceipt = vi.fn()
-const mockReadContract = vi.fn()
+const mockSignTypedData = vi.fn()
+
+const TEST_ACCOUNT_ADDRESS = '0x' + 'ff'.repeat(20) as `0x${string}`
 
 vi.mock('../wallets/index.js', () => ({
   wallets: {
@@ -17,14 +20,25 @@ vi.mock('../wallets/index.js', () => ({
 vi.mock('./client.js', () => ({
   createIdentityWalletClient: vi.fn(() => ({
     writeContract: mockWriteContract,
-    account: { address: '0x' + 'ff'.repeat(20) },
+    account: {
+      address: TEST_ACCOUNT_ADDRESS,
+      signTypedData: mockSignTypedData,
+    },
     chain: { id: 1439, name: 'Injective EVM Testnet' },
   })),
   createIdentityPublicClient: vi.fn(() => ({
     waitForTransactionReceipt: mockWaitForTransactionReceipt,
-    readContract: mockReadContract,
   })),
 }))
+
+// Mock walletLinkDeadline to return a deterministic value
+vi.mock('./helpers.js', async () => {
+  const actual = await vi.importActual<typeof import('./helpers.js')>('./helpers.js')
+  return {
+    ...actual,
+    walletLinkDeadline: vi.fn(() => 1700000000n),
+  }
+})
 
 import { identity } from './index.js'
 import { wallets } from '../wallets/index.js'
@@ -36,18 +50,21 @@ const config = testConfig()
 const TEST_ADDRESS = 'inj1' + 'a'.repeat(38)
 const TEST_PASSWORD = 'testpass123'
 const TEST_TX_HASH = '0x' + 'dd'.repeat(32)
+const TEST_WALLET_TX_HASH = '0x' + 'ee'.repeat(32)
 const TEST_AGENT_ID_HEX = '0x' + '00'.repeat(31) + '2a' // 42 in hex
-const TEST_REGISTRY_ADDRESS = '0x0000000000000000000000000000000000000001' // matches testnet config
+const TEST_REGISTRY_ADDRESS = '0x19d1916ba1a2ac081b04893563a6ca0c92bc8c8e' // matches testnet config
+const TEST_SIGNATURE = '0x' + 'ab'.repeat(65) as `0x${string}`
+
 const TEST_RECEIPT = {
   logs: [
     {
       address: TEST_REGISTRY_ADDRESS,
       topics: [
-        '0x' + 'ee'.repeat(32), // Transfer event signature
-        '0x' + '00'.repeat(32), // from = zero address (mint)
-        '0x' + 'ff'.repeat(32), // to
-        TEST_AGENT_ID_HEX,      // tokenId
+        '0x' + 'ee'.repeat(32),  // event signature (any value for mock)
+        TEST_AGENT_ID_HEX,        // indexed agentId
+        '0x' + '00'.repeat(12) + 'ff'.repeat(20), // indexed owner (padded)
       ],
+      data: '0x', // non-indexed agentURI (not parsed by handler)
     },
   ],
 }
@@ -59,9 +76,8 @@ function defaultRegisterParams() {
     address: TEST_ADDRESS,
     password: TEST_PASSWORD,
     name: 'MyAgent',
-    type: 1,
-    builderCode: '0x' + 'cc'.repeat(32),
-    wallet: '0x' + 'bb'.repeat(20),
+    type: 'trading',
+    builderCode: 'builder-xyz',
   }
 }
 
@@ -72,15 +88,54 @@ describe('identity.register', () => {
     vi.clearAllMocks()
     mockWriteContract.mockResolvedValue(TEST_TX_HASH)
     mockWaitForTransactionReceipt.mockResolvedValue(TEST_RECEIPT)
+    mockSignTypedData.mockResolvedValue(TEST_SIGNATURE)
   })
 
-  it('registers agent and returns agentId + txHash', async () => {
+  it('registers agent with metadata and returns agentId from Registered event', async () => {
     const result = await identity.register(config, defaultRegisterParams())
 
     expect(result.agentId).toBe('42')
     expect(result.txHash).toBe(TEST_TX_HASH)
-    expect(result.owner).toBe('0x' + 'ff'.repeat(20))
-    expect(result.evmAddress).toBe('0x' + 'ff'.repeat(20))
+    expect(result.owner).toBe(TEST_ACCOUNT_ADDRESS)
+    expect(result.evmAddress).toBe(TEST_ACCOUNT_ADDRESS)
+
+    // Verify register was called with correct function and metadata tuple array
+    expect(mockWriteContract).toHaveBeenCalledTimes(1)
+    expect(mockWriteContract).toHaveBeenCalledWith(
+      expect.objectContaining({
+        functionName: 'register',
+        args: [
+          '',
+          [
+            { metadataKey: 'name', metadataValue: encodeStringMetadata('MyAgent') },
+            { metadataKey: 'agentType', metadataValue: encodeStringMetadata('trading') },
+            { metadataKey: 'builderCode', metadataValue: encodeStringMetadata('builder-xyz') },
+          ],
+        ],
+      }),
+    )
+  })
+
+  it('passes optional uri to register call', async () => {
+    const params = { ...defaultRegisterParams(), uri: 'https://example.com/agent.json' }
+    await identity.register(config, params)
+
+    expect(mockWriteContract).toHaveBeenCalledWith(
+      expect.objectContaining({
+        functionName: 'register',
+        args: [
+          'https://example.com/agent.json',
+          expect.any(Array),
+        ],
+      }),
+    )
+  })
+
+  it('passes empty string for uri when not provided', async () => {
+    await identity.register(config, defaultRegisterParams())
+
+    const callArgs = mockWriteContract.mock.calls[0]![0]
+    expect(callArgs.args[0]).toBe('')
   })
 
   it('calls wallets.unlock with correct address/password', async () => {
@@ -95,23 +150,49 @@ describe('identity.register', () => {
     expect(createIdentityWalletClient).toHaveBeenCalledWith('testnet', '0x' + 'ab'.repeat(32))
   })
 
-  it('passes optional uri to writeContract', async () => {
-    const params = { ...defaultRegisterParams(), uri: 'https://example.com/agent.json' }
-    await identity.register(config, params)
+  it('calls setAgentWallet with EIP-712 signature for self-link wallet', async () => {
+    mockWriteContract
+      .mockResolvedValueOnce(TEST_TX_HASH)        // register
+      .mockResolvedValueOnce(TEST_WALLET_TX_HASH)  // setAgentWallet
 
-    expect(mockWriteContract).toHaveBeenCalledWith(
+    const params = {
+      ...defaultRegisterParams(),
+      wallet: TEST_ACCOUNT_ADDRESS, // same as account address → self-link
+    }
+    const result = await identity.register(config, params)
+
+    // register + setAgentWallet = 2 calls
+    expect(mockWriteContract).toHaveBeenCalledTimes(2)
+    expect(mockWriteContract.mock.calls[1]![0]).toEqual(
       expect.objectContaining({
-        functionName: 'registerAgent',
-        args: expect.arrayContaining(['https://example.com/agent.json']),
+        functionName: 'setAgentWallet',
+        args: [42n, TEST_ACCOUNT_ADDRESS, 1700000000n, TEST_SIGNATURE],
       }),
     )
+    expect(result.walletTxHash).toBe(TEST_WALLET_TX_HASH)
+    expect(result.walletLinkSkipped).toBeUndefined()
   })
 
-  it('passes empty string for uri when not provided', async () => {
-    await identity.register(config, defaultRegisterParams())
+  it('skips wallet link when wallet differs from signer', async () => {
+    const differentWallet = '0x' + 'aa'.repeat(20)
+    const params = {
+      ...defaultRegisterParams(),
+      wallet: differentWallet,
+    }
+    const result = await identity.register(config, params)
 
-    const callArgs = mockWriteContract.mock.calls[0]![0]
-    expect(callArgs.args[3]).toBe('')
+    // Only the register call, no setAgentWallet
+    expect(mockWriteContract).toHaveBeenCalledTimes(1)
+    expect(result.walletLinkSkipped).toBe(true)
+    expect(result.walletLinkReason).toContain('Wallet differs from signer')
+  })
+
+  it('does not attempt wallet link when wallet is not provided', async () => {
+    const result = await identity.register(config, defaultRegisterParams())
+
+    expect(mockWriteContract).toHaveBeenCalledTimes(1) // only register
+    expect(result.walletTxHash).toBeUndefined()
+    expect(result.walletLinkSkipped).toBeUndefined()
   })
 
   it('wraps errors in IdentityTxFailed', async () => {
@@ -131,24 +212,62 @@ describe('identity.update', () => {
     vi.clearAllMocks()
     mockWriteContract.mockResolvedValue(TEST_TX_HASH)
     mockWaitForTransactionReceipt.mockResolvedValue({})
-    mockReadContract.mockResolvedValue(['OldName', 0, '0x' + '00'.repeat(32)])
+    mockSignTypedData.mockResolvedValue(TEST_SIGNATURE)
   })
 
-  it('updates only metadata when name provided (1 tx)', async () => {
+  it('calls setMetadata for name update', async () => {
+    const result = await identity.update(config, {
+      address: TEST_ADDRESS,
+      password: TEST_PASSWORD,
+      agentId: '42',
+      name: 'NewName',
+    })
+
+    expect(mockWriteContract).toHaveBeenCalledTimes(1)
+    expect(mockWriteContract).toHaveBeenCalledWith(
+      expect.objectContaining({
+        functionName: 'setMetadata',
+        args: [42n, 'name', encodeStringMetadata('NewName')],
+      }),
+    )
+    expect(result.txHashes).toHaveLength(1)
+  })
+
+  it('calls setMetadata for agentType update', async () => {
     await identity.update(config, {
       address: TEST_ADDRESS,
       password: TEST_PASSWORD,
       agentId: '42',
-      name: 'NewName',
+      type: 'analytics',
     })
 
     expect(mockWriteContract).toHaveBeenCalledTimes(1)
     expect(mockWriteContract).toHaveBeenCalledWith(
-      expect.objectContaining({ functionName: 'updateMetadata' }),
+      expect.objectContaining({
+        functionName: 'setMetadata',
+        args: [42n, 'agentType', encodeStringMetadata('analytics')],
+      }),
     )
   })
 
-  it('sends separate tx for URI update (1 tx)', async () => {
+  it('calls setMetadata for builderCode update', async () => {
+    await identity.update(config, {
+      address: TEST_ADDRESS,
+      password: TEST_PASSWORD,
+      agentId: '42',
+      builderCode: 'new-builder',
+    })
+
+    expect(mockWriteContract).toHaveBeenCalledTimes(1)
+    expect(mockWriteContract).toHaveBeenCalledWith(
+      expect.objectContaining({
+        functionName: 'setMetadata',
+        args: [42n, 'builderCode', encodeStringMetadata('new-builder')],
+      }),
+    )
+  })
+
+  it('calls setAgentURI for URI update', async () => {
     const result = await identity.update(config, {
       address: TEST_ADDRESS,
       password: TEST_PASSWORD,
@@ -158,68 +277,71 @@ describe('identity.update', () => {
 
     expect(mockWriteContract).toHaveBeenCalledTimes(1)
     expect(mockWriteContract).toHaveBeenCalledWith(
-      expect.objectContaining({ functionName: 'setTokenURI' }),
+      expect.objectContaining({
+        functionName: 'setAgentURI',
+        args: [42n, 'https://new-uri.com'],
+      }),
     )
     expect(result.txHashes).toHaveLength(1)
   })
 
-  it('sends separate tx for wallet update (1 tx)', async () => {
-    const result = await identity.update(config, {
-      address: TEST_ADDRESS,
-      password: TEST_PASSWORD,
-      agentId: '42',
-      wallet: '0x' + 'aa'.repeat(20),
-    })
-
-    expect(mockWriteContract).toHaveBeenCalledTimes(1)
-    expect(mockWriteContract).toHaveBeenCalledWith(
-      expect.objectContaining({ functionName: 'setLinkedWallet' }),
-    )
-    expect(result.txHashes).toHaveLength(1)
-  })
-
-  it('sends 3 txs when updating name + uri + wallet', async () => {
+  it('sends multiple txs when updating name + type + uri', async () => {
     const result = await identity.update(config, {
       address: TEST_ADDRESS,
       password: TEST_PASSWORD,
       agentId: '42',
       name: 'NewName',
+      type: 'analytics',
       uri: 'https://new-uri.com',
-      wallet: '0x' + 'aa'.repeat(20),
     })
 
+    // 2 metadata calls (name, agentType) + 1 setAgentURI = 3 txs
     expect(mockWriteContract).toHaveBeenCalledTimes(3)
     expect(result.txHashes).toHaveLength(3)
 
-    // Verify order: updateMetadata, setTokenURI, setLinkedWallet
-    expect(mockWriteContract.mock.calls[0]![0].functionName).toBe('updateMetadata')
-    expect(mockWriteContract.mock.calls[1]![0].functionName).toBe('setTokenURI')
-    expect(mockWriteContract.mock.calls[2]![0].functionName).toBe('setLinkedWallet')
+    // Verify order: setMetadata(name), setMetadata(agentType), setAgentURI
+    expect(mockWriteContract.mock.calls[0]![0].functionName).toBe('setMetadata')
+    expect(mockWriteContract.mock.calls[0]![0].args[1]).toBe('name')
+    expect(mockWriteContract.mock.calls[1]![0].functionName).toBe('setMetadata')
+    expect(mockWriteContract.mock.calls[1]![0].args[1]).toBe('agentType')
+    expect(mockWriteContract.mock.calls[2]![0].functionName).toBe('setAgentURI')
   })
 
-  it('reads current metadata before updating (to merge unchanged fields)', async () => {
-    mockReadContract.mockResolvedValue(['OldName', 5, '0x' + 'ab'.repeat(32)])
+  it('calls setAgentWallet with EIP-712 signature for self-link wallet update', async () => {
+    mockWriteContract
+      .mockResolvedValueOnce(TEST_TX_HASH)          // setAgentWallet
+    mockWaitForTransactionReceipt.mockResolvedValue({})
 
-    await identity.update(config, {
+    const result = await identity.update(config, {
       address: TEST_ADDRESS,
       password: TEST_PASSWORD,
       agentId: '42',
-      name: 'NewName',
+      wallet: TEST_ACCOUNT_ADDRESS,
     })
 
-    // Should have read current metadata
-    expect(mockReadContract).toHaveBeenCalledWith(
+    expect(mockWriteContract).toHaveBeenCalledTimes(1)
+    expect(mockWriteContract).toHaveBeenCalledWith(
       expect.objectContaining({
-        functionName: 'getMetadata',
-        args: [42n],
+        functionName: 'setAgentWallet',
+        args: [42n, TEST_ACCOUNT_ADDRESS, 1700000000n, TEST_SIGNATURE],
       }),
     )
+    expect(result.walletTxHash).toBe(TEST_TX_HASH)
+  })
 
-    // Should merge: new name, but keep old type (5) and old builderCode
-    const writeCall = mockWriteContract.mock.calls[0]![0]
-    expect(writeCall.args[1]).toBe('NewName')
-    expect(writeCall.args[2]).toBe(5)
-    expect(writeCall.args[3]).toBe('0x' + 'ab'.repeat(32))
+  it('skips wallet link when wallet differs from signer', async () => {
+    const differentWallet = '0x' + 'aa'.repeat(20)
+    const result = await identity.update(config, {
+      address: TEST_ADDRESS,
+      password: TEST_PASSWORD,
+      agentId: '42',
+      wallet: differentWallet,
+    })
+
+    // No writeContract calls for wallet link
+    expect(mockWriteContract).not.toHaveBeenCalled()
+    expect(result.walletLinkSkipped).toBe(true)
+    expect(result.walletLinkReason).toContain('Wallet differs from signer')
   })
 
   it('returns agentId in result', async () => {
