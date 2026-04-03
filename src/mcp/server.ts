@@ -25,6 +25,8 @@ import { debridge } from '../bridges/debridge.js'
 import { evm } from '../evm/index.js'
 import { eip712 } from '../evm/eip712.js'
 import { authz, TRADING_MSG_TYPES } from '../authz/index.js'
+import { identity } from '../identity/index.js'
+import { identityRead } from '../identity/read.js'
 
 const injAddress = z.string().regex(/^inj1[a-z0-9]{38}$/, 'Must be a valid inj1... address (42 chars)')
 const numericString = z.string().regex(/^\d+(\.\d+)?$/, 'Must be a positive numeric string')
@@ -803,6 +805,119 @@ server.tool(
     return {
       content: [{
         type: 'text',
+        text: JSON.stringify(result, null, 2),
+      }],
+    }
+  },
+)
+
+// ─── Identity Tools ─────────────────────────────────────────────────────────
+
+server.tool(
+  'agent_register',
+  'Register a new AI agent identity on the Injective ERC-8004 registry. Mints an NFT that gives your agent on-chain identity, discoverability, and reputation tracking. IMPORTANT: This is a real on-chain transaction that costs gas.',
+  {
+    address: injAddress.describe('Your inj1... address (must be in local keystore).'),
+    password: z.string().describe('Keystore password to decrypt the signing key.'),
+    name: z.string().min(1).describe('Human-readable agent name.'),
+    type: z.number().int().min(0).max(255).describe('Agent type code (uint8). E.g., 1 = trading, 2 = analytics.'),
+    builderCode: z.string().regex(/^0x[a-fA-F0-9]{64}$/, 'Must be a 32-byte hex string (0x-prefixed, 66 chars)')
+      .describe('Builder identifier (bytes32).'),
+    wallet: ethAddress.describe('EVM wallet address to link to this agent identity.'),
+    uri: z.string().optional().describe('Token URI (e.g., IPFS link to agent card JSON). Can be set later via agent_update.'),
+  },
+  async ({ address, password, name, type, builderCode, wallet, uri }) => {
+    const result = await identity.register(config, {
+      address, password, name, type, builderCode, wallet, uri,
+    })
+    return {
+      content: [{
+        type: 'text' as const,
+        text: JSON.stringify(result, null, 2),
+      }],
+    }
+  },
+)
+
+server.tool(
+  'agent_update',
+  'Update an existing agent\'s metadata (name, type, builder code), token URI, or linked wallet. Only the agent owner can update. Each field change is a separate on-chain transaction.',
+  {
+    address: injAddress.describe('Your inj1... address (must be in local keystore).'),
+    password: z.string().describe('Keystore password to decrypt the signing key.'),
+    agentId: z.string().min(1).describe('The numeric agent ID (from agent_register).'),
+    name: z.string().min(1).optional().describe('New agent name.'),
+    type: z.number().int().min(0).max(255).optional().describe('New agent type code.'),
+    builderCode: z.string().regex(/^0x[a-fA-F0-9]{64}$/).optional()
+      .describe('New builder identifier (bytes32).'),
+    uri: z.string().optional().describe('New token URI (e.g., IPFS link).'),
+    wallet: ethAddress.optional().describe('New linked EVM wallet address.'),
+  },
+  async ({ address, password, agentId, name, type, builderCode, uri, wallet }) => {
+    const result = await identity.update(config, {
+      address, password, agentId, name, type, builderCode, uri, wallet,
+    })
+    return {
+      content: [{
+        type: 'text' as const,
+        text: JSON.stringify(result, null, 2),
+      }],
+    }
+  },
+)
+
+server.tool(
+  'agent_deregister',
+  'Permanently burn an agent\'s identity NFT. This is IRREVERSIBLE. The agent loses its on-chain identity, reputation, and discoverability. Requires confirm=true.',
+  {
+    address: injAddress.describe('Your inj1... address (must be in local keystore).'),
+    password: z.string().describe('Keystore password to decrypt the signing key.'),
+    agentId: z.string().min(1).describe('The numeric agent ID to deregister.'),
+    confirm: z.boolean().describe('Must be true to proceed. This action is irreversible.'),
+  },
+  async ({ address, password, agentId, confirm }) => {
+    const result = await identity.deregister(config, {
+      address, password, agentId, confirm,
+    })
+    return {
+      content: [{
+        type: 'text' as const,
+        text: JSON.stringify(result, null, 2),
+      }],
+    }
+  },
+)
+
+server.tool(
+  'agent_status',
+  'Get complete information about a specific agent: metadata, linked wallet, owner address, token URI, and reputation score with feedback count. Read-only, no gas cost.',
+  {
+    agentId: z.string().min(1).describe('The numeric agent ID to look up.'),
+  },
+  async ({ agentId }) => {
+    const result = await identityRead.status(config, { agentId })
+    return {
+      content: [{
+        type: 'text' as const,
+        text: JSON.stringify(result, null, 2),
+      }],
+    }
+  },
+)
+
+server.tool(
+  'agent_list',
+  'Find registered agents on Injective. Filter by owner address or agent type. Returns agent IDs with summary metadata. Read-only, no gas cost.',
+  {
+    owner: z.string().optional().describe('Filter by owner — accepts inj1... or 0x... address.'),
+    type: z.number().int().min(0).max(255).optional().describe('Filter by agent type code.'),
+    limit: z.number().int().min(1).max(100).optional().describe('Max agents to return (default 20, max 100).'),
+  },
+  async ({ owner, type, limit }) => {
+    const result = await identityRead.list(config, { owner, type, limit })
+    return {
+      content: [{
+        type: 'text' as const,
         text: JSON.stringify(result, null, 2),
       }],
     }

@@ -527,3 +527,79 @@ describe('trade_limit_states parameter validation', () => {
     expect(result.success).toBe(false)
   })
 })
+
+// ─── Identity Tool Schema Tests ─────────────────────────────────────────────
+
+describe('builderCode schema', () => {
+  const builderCode = z.string().regex(/^0x[a-fA-F0-9]{64}$/, 'Must be a 32-byte hex string (0x-prefixed, 66 chars)')
+
+  it('accepts valid 32-byte hex', () => {
+    expect(builderCode.safeParse('0x' + 'a'.repeat(64)).success).toBe(true)
+  })
+
+  it('accepts mixed-case hex', () => {
+    expect(builderCode.safeParse('0x' + 'aAbBcCdDeEfF'.repeat(5) + 'aAaA').success).toBe(true)
+  })
+
+  it('rejects short hex', () => {
+    expect(builderCode.safeParse('0x' + 'a'.repeat(63)).success).toBe(false)
+  })
+
+  it('rejects missing 0x prefix', () => {
+    expect(builderCode.safeParse('a'.repeat(64)).success).toBe(false)
+  })
+
+  it('rejects too-long hex', () => {
+    expect(builderCode.safeParse('0x' + 'a'.repeat(65)).success).toBe(false)
+  })
+})
+
+describe('ethAddress schema', () => {
+  it('accepts valid address', () => {
+    expect(ethAddress.safeParse('0x' + 'a'.repeat(40)).success).toBe(true)
+  })
+
+  it('accepts mixed-case address', () => {
+    expect(ethAddress.safeParse('0xAbCdEf0123456789AbCdEf0123456789AbCdEf01').success).toBe(true)
+  })
+
+  it('rejects short address', () => {
+    expect(ethAddress.safeParse('0x' + 'a'.repeat(39)).success).toBe(false)
+  })
+
+  it('rejects too-long address', () => {
+    expect(ethAddress.safeParse('0x' + 'a'.repeat(41)).success).toBe(false)
+  })
+
+  it('rejects missing 0x prefix', () => {
+    expect(ethAddress.safeParse('a'.repeat(40)).success).toBe(false)
+  })
+})
+
+describe('agent type field schema', () => {
+  const agentType = z.number().int().min(0).max(255)
+
+  it('accepts 0', () => {
+    expect(agentType.safeParse(0).success).toBe(true)
+  })
+
+  it('accepts 255', () => {
+    expect(agentType.safeParse(255).success).toBe(true)
+  })
+
+  it('accepts mid-range value', () => {
+    expect(agentType.safeParse(128).success).toBe(true)
+  })
+
+  it('rejects -1', () => {
+    expect(agentType.safeParse(-1).success).toBe(false)
+  })
+
+  it('rejects 256', () => {
+    expect(agentType.safeParse(256).success).toBe(false)
+  })
+
+  it('rejects non-integer', () => {
+    expect(agentType.safeParse(1.5).success).toBe(false)
+  })
+})
