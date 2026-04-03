@@ -123,11 +123,13 @@ export const identityRead = {
     // Convert inj1... owner to 0x address for comparison
     let ownerFilter: string | undefined
     if (params.owner) {
-      ownerFilter = params.owner.startsWith('inj1')
+      ownerFilter = (params.owner.startsWith('inj1')
         ? getEthereumAddress(params.owner)
         : params.owner
+      ).toLowerCase()
     }
 
+    try {
     // Scan Transfer events where from is zero address (mint events)
     const logs = await publicClient.getLogs({
       address: identityCfg.identityRegistry,
@@ -147,10 +149,7 @@ export const identityRead = {
 
     // Filter by owner if set, then cap at limit
     const filtered = ownerFilter
-      ? logs.filter(
-          (log) =>
-            log.args.to?.toLowerCase() === ownerFilter!.toLowerCase(),
-        )
+      ? logs.filter((log) => log.args.to?.toLowerCase() === ownerFilter)
       : logs
 
     const candidateIds = filtered
@@ -196,5 +195,9 @@ export const identityRead = {
     }
 
     return { agents, total: agents.length }
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err)
+      throw new Error(`Failed to list agents: ${message}`)
+    }
   },
 }
