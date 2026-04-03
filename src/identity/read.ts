@@ -28,7 +28,7 @@ export interface StatusResult {
   linkedWallet: string
   reputation: {
     score: string
-    feedbackCount: string
+    count: string
   }
 }
 
@@ -100,9 +100,9 @@ export const identityRead = {
         publicClient.readContract({
           address: identityCfg.reputationRegistry,
           abi: REPUTATION_REGISTRY_ABI,
-          functionName: 'getReputation',
-          args: [tokenId],
-        }).catch(() => [0n, 0n]) as Promise<[bigint, bigint]>,
+          functionName: 'getSummary',
+          args: [tokenId, [], '', ''],
+        }).catch(() => [0n, 0n, 0]) as Promise<[bigint, bigint, number]>,
       ])
 
       const name = decodeStringMetadata(nameRaw)
@@ -118,8 +118,10 @@ export const identityRead = {
         tokenURI,
         linkedWallet,
         reputation: {
-          score: reputation[0].toString(),
-          feedbackCount: reputation[1].toString(),
+          score: reputation[1] !== 0n
+            ? (Number(reputation[1]) / Math.pow(10, Number(reputation[2]))).toString()
+            : '0',
+          count: Number(reputation[0]).toString(),
         },
       }
     } catch (err) {

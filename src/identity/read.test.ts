@@ -32,8 +32,9 @@ const AGENT_ID = '42'
 const OWNER_ADDRESS = '0x' + 'ff'.repeat(20)
 const LINKED_WALLET = '0x' + 'aa'.repeat(20)
 const TOKEN_URI = 'https://example.com/agent/42.json'
-const REPUTATION_SCORE = 9500n
-const FEEDBACK_COUNT = 120n
+const REPUTATION_COUNT = 3n
+const REPUTATION_VALUE = 850n
+const REPUTATION_DECIMALS = 1
 
 // Pre-encoded metadata values
 const ENCODED_NAME = encodeStringMetadata('TestAgent')
@@ -53,7 +54,7 @@ describe('identityRead.status', () => {
     // 4. ownerOf → owner address
     // 5. tokenURI → URI string
     // 6. getAgentWallet → wallet address
-    // 7. getReputation → [score, feedbackCount]
+    // 7. getSummary → [count, summaryValue, summaryValueDecimals]
     mockReadContract
       .mockResolvedValueOnce(ENCODED_NAME)
       .mockResolvedValueOnce(ENCODED_BUILDER_CODE)
@@ -61,7 +62,7 @@ describe('identityRead.status', () => {
       .mockResolvedValueOnce(OWNER_ADDRESS)
       .mockResolvedValueOnce(TOKEN_URI)
       .mockResolvedValueOnce(LINKED_WALLET)
-      .mockResolvedValueOnce([REPUTATION_SCORE, FEEDBACK_COUNT])
+      .mockResolvedValueOnce([REPUTATION_COUNT, REPUTATION_VALUE, REPUTATION_DECIMALS])
   })
 
   it('returns full agent details including reputation', async () => {
@@ -76,14 +77,14 @@ describe('identityRead.status', () => {
       tokenURI: TOKEN_URI,
       linkedWallet: LINKED_WALLET,
       reputation: {
-        score: '9500',
-        feedbackCount: '120',
+        score: '85',
+        count: '3',
       },
     })
   })
 
-  it('returns bigint reputation values as strings', async () => {
-    // Use very large bigint values to verify string conversion
+  it('returns getSummary reputation values as strings', async () => {
+    // Use specific values to verify decimal conversion
     mockReadContract.mockReset()
     mockReadContract
       .mockResolvedValueOnce(encodeStringMetadata('BigRepAgent'))
@@ -92,14 +93,14 @@ describe('identityRead.status', () => {
       .mockResolvedValueOnce(OWNER_ADDRESS)
       .mockResolvedValueOnce(TOKEN_URI)
       .mockResolvedValueOnce(LINKED_WALLET)
-      .mockResolvedValueOnce([999999999999999999n, 1000000000000n])
+      .mockResolvedValueOnce([10n, 4500n, 2])
 
     const result = await identityRead.status(config, { agentId: AGENT_ID })
 
-    expect(result.reputation.score).toBe('999999999999999999')
-    expect(result.reputation.feedbackCount).toBe('1000000000000')
+    expect(result.reputation.score).toBe('45')
+    expect(result.reputation.count).toBe('10')
     expect(typeof result.reputation.score).toBe('string')
-    expect(typeof result.reputation.feedbackCount).toBe('string')
+    expect(typeof result.reputation.count).toBe('string')
   })
 
   it('decodes empty metadata as empty string', async () => {
@@ -111,7 +112,7 @@ describe('identityRead.status', () => {
       .mockResolvedValueOnce(OWNER_ADDRESS)
       .mockResolvedValueOnce(TOKEN_URI)
       .mockResolvedValueOnce(LINKED_WALLET)
-      .mockResolvedValueOnce([0n, 0n])
+      .mockResolvedValueOnce([0n, 0n, 0])
 
     const result = await identityRead.status(config, { agentId: AGENT_ID })
 

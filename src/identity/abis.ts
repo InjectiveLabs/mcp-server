@@ -145,14 +145,115 @@ export const IDENTITY_REGISTRY_ABI = [
 ] as const
 
 export const REPUTATION_REGISTRY_ABI = [
+  // ── Summary ──
   {
     type: 'function',
-    name: 'getReputation',
-    inputs: [{ name: 'tokenId', type: 'uint256' }],
-    outputs: [
-      { name: 'score', type: 'uint256' },
-      { name: 'feedbackCount', type: 'uint256' },
+    name: 'getSummary',
+    inputs: [
+      { name: 'agentId', type: 'uint256' },
+      { name: 'clientAddresses', type: 'address[]' },
+      { name: 'tag1', type: 'string' },
+      { name: 'tag2', type: 'string' },
     ],
+    outputs: [
+      { name: 'count', type: 'uint64' },
+      { name: 'summaryValue', type: 'int128' },
+      { name: 'summaryValueDecimals', type: 'uint8' },
+    ],
+    stateMutability: 'view',
+  },
+  // ── Give feedback ──
+  {
+    type: 'function',
+    name: 'giveFeedback',
+    inputs: [
+      { name: 'agentId', type: 'uint256' },
+      { name: 'value', type: 'int128' },
+      { name: 'valueDecimals', type: 'uint8' },
+      { name: 'tag1', type: 'string' },
+      { name: 'tag2', type: 'string' },
+      { name: 'endpoint', type: 'string' },
+      { name: 'feedbackURI', type: 'string' },
+      { name: 'feedbackHash', type: 'bytes32' },
+    ],
+    outputs: [],
+    stateMutability: 'nonpayable',
+  },
+  // ── Read all feedback ──
+  {
+    type: 'function',
+    name: 'readAllFeedback',
+    inputs: [
+      { name: 'agentId', type: 'uint256' },
+      { name: 'clientAddresses', type: 'address[]' },
+      { name: 'tag1', type: 'string' },
+      { name: 'tag2', type: 'string' },
+      { name: 'includeRevoked', type: 'bool' },
+    ],
+    outputs: [
+      { name: 'clients', type: 'address[]' },
+      { name: 'feedbackIndices', type: 'uint64[]' },
+      { name: 'values', type: 'int128[]' },
+      { name: 'valueDecimals', type: 'uint8[]' },
+      { name: 'tag1s', type: 'string[]' },
+      { name: 'tag2s', type: 'string[]' },
+      { name: 'revokedArr', type: 'bool[]' },
+    ],
+    stateMutability: 'view',
+  },
+  // ── Read single feedback ──
+  {
+    type: 'function',
+    name: 'readFeedback',
+    inputs: [
+      { name: 'agentId', type: 'uint256' },
+      { name: 'client', type: 'address' },
+      { name: 'feedbackIndex', type: 'uint64' },
+    ],
+    outputs: [
+      { name: 'value', type: 'int128' },
+      { name: 'valueDecimals', type: 'uint8' },
+      { name: 'tag1', type: 'string' },
+      { name: 'tag2', type: 'string' },
+      { name: 'revoked', type: 'bool' },
+    ],
+    stateMutability: 'view',
+  },
+  // ── Get client addresses ──
+  {
+    type: 'function',
+    name: 'getClients',
+    inputs: [{ name: 'agentId', type: 'uint256' }],
+    outputs: [{ name: '', type: 'address[]' }],
+    stateMutability: 'view',
+  },
+  // ── Revoke feedback ──
+  {
+    type: 'function',
+    name: 'revokeFeedback',
+    inputs: [
+      { name: 'agentId', type: 'uint256' },
+      { name: 'feedbackIndex', type: 'uint64' },
+    ],
+    outputs: [],
+    stateMutability: 'nonpayable',
+  },
+  // ── Events ──
+  {
+    type: 'event',
+    name: 'NewFeedback',
+    inputs: [
+      { name: 'agentId', type: 'uint256', indexed: true },
+      { name: 'client', type: 'address', indexed: true },
+      { name: 'feedbackIndex', type: 'uint64', indexed: false },
+    ],
+  },
+  // ── Metadata ──
+  {
+    type: 'function',
+    name: 'getVersion',
+    inputs: [],
+    outputs: [{ name: '', type: 'string' }],
     stateMutability: 'view',
   },
 ] as const
