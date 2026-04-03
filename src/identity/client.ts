@@ -4,9 +4,15 @@ import type { PublicClient, WalletClient, Chain } from 'viem'
 import type { NetworkName } from '../config/index.js'
 import { getIdentityConfig } from './config.js'
 
+const chainCache = new Map<NetworkName, Chain>()
+const publicClientCache = new Map<NetworkName, PublicClient>()
+
 function buildChain(network: NetworkName): Chain {
+  const cached = chainCache.get(network)
+  if (cached) return cached
+
   const cfg = getIdentityConfig(network)
-  return defineChain({
+  const chain = defineChain({
     id: cfg.chainId,
     name: network === 'mainnet' ? 'Injective EVM' : 'Injective EVM Testnet',
     nativeCurrency: { name: 'Injective', symbol: 'INJ', decimals: 18 },
@@ -14,11 +20,19 @@ function buildChain(network: NetworkName): Chain {
       default: { http: [cfg.rpcUrl] },
     },
   })
+
+  chainCache.set(network, chain)
+  return chain
 }
 
 export function createIdentityPublicClient(network: NetworkName): PublicClient {
+  const cached = publicClientCache.get(network)
+  if (cached) return cached
+
   const chain = buildChain(network)
-  return createPublicClient({ chain, transport: http() })
+  const client = createPublicClient({ chain, transport: http() })
+  publicClientCache.set(network, client)
+  return client
 }
 
 export function createIdentityWalletClient(

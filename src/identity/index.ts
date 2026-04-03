@@ -6,6 +6,7 @@
  * then discarded. The LLM/agent never sees the private key.
  */
 import type { Config } from '../config/index.js'
+import type { PublicClient, WalletClient, Account, Chain } from 'viem'
 import { wallets } from '../wallets/index.js'
 import { createIdentityWalletClient, createIdentityPublicClient } from './client.js'
 import { getIdentityConfig } from './config.js'
@@ -59,22 +60,53 @@ export interface DeregisterResult {
   txHash: string
 }
 
+// ─── Helpers ────────────────────────────────────────────────────────────────
+
+interface TxContext {
+  walletClient: WalletClient
+  publicClient: PublicClient
+  account: Account
+  chain: Chain
+  identityRegistry: `0x${string}`
+}
+
+async function withIdentityTx<T>(
+  config: Config,
+  address: string,
+  password: string,
+  fn: (ctx: TxContext) => Promise<T>,
+): Promise<T> {
+  try {
+    const privateKeyHex = wallets.unlock(address, password)
+    const walletClient = createIdentityWalletClient(config.network, privateKeyHex)
+    const publicClient = createIdentityPublicClient(config.network)
+    const { identityRegistry } = getIdentityConfig(config.network)
+    const account = walletClient.account
+    if (!account) throw new IdentityTxFailed('Wallet client has no account')
+
+    return await fn({
+      walletClient,
+      publicClient,
+      account,
+      chain: walletClient.chain!,
+      identityRegistry,
+    })
+  } catch (err) {
+    if (err instanceof IdentityTxFailed) throw err
+    const message = err instanceof Error ? err.message : String(err)
+    throw new IdentityTxFailed(message)
+  }
+}
+
 // ─── Handlers ───────────────────────────────────────────────────────────────
 
 export const identity = {
   async register(config: Config, params: RegisterParams): Promise<RegisterResult> {
-    try {
-      const privateKeyHex = wallets.unlock(params.address, params.password)
-      const walletClient = createIdentityWalletClient(config.network, privateKeyHex)
-      const publicClient = createIdentityPublicClient(config.network)
-      const identityCfg = getIdentityConfig(config.network)
-      const account = walletClient.account
-      if (!account) throw new IdentityTxFailed('Wallet client has no account')
-
-      const txHash = await walletClient.writeContract({
-        chain: walletClient.chain,
-        account,
-        address: identityCfg.identityRegistry,
+    return withIdentityTx(config, params.address, params.password, async (ctx) => {
+      const txHash = await ctx.walletClient.writeContract({
+        chain: ctx.chain,
+        account: ctx.account,
+        address: ctx.identityRegistry,
         abi: IDENTITY_REGISTRY_ABI,
         functionName: 'registerAgent',
         args: [
@@ -86,12 +118,12 @@ export const identity = {
         ],
       })
 
-      const receipt = await publicClient.waitForTransactionReceipt({ hash: txHash })
+      const receipt = await ctx.publicClient.waitForTransactionReceipt({ hash: txHash })
 
       // Parse agentId from Transfer event (third indexed topic = tokenId).
       // Filter by contract address to avoid picking up events from other contracts.
       let agentId = '0'
-      const registryAddr = identityCfg.identityRegistry.toLowerCase()
+      const registryAddr = ctx.identityRegistry.toLowerCase()
       for (const log of receipt.logs) {
         if (
           log.address?.toLowerCase() === registryAddr &&
@@ -103,12 +135,8 @@ export const identity = {
         }
       }
 
-      return { agentId, txHash, owner: account.address, evmAddress: account.address }
-    } catch (err) {
-      if (err instanceof IdentityTxFailed) throw err
-      const message = err instanceof Error ? err.message : String(err)
-      throw new IdentityTxFailed(message)
-    }
+      return { agentId, txHash, owner: ctx.account.address, evmAddress: ctx.account.address }
+    })
   },
 
   async update(config: Config, params: UpdateParams): Promise<UpdateResult> {
@@ -119,79 +147,63 @@ export const identity = {
       throw new IdentityTxFailed('No fields provided to update')
     }
 
-    try {
-      const privateKeyHex = wallets.unlock(params.address, params.password)
-      const walletClient = createIdentityWalletClient(config.network, privateKeyHex)
-      const publicClient = createIdentityPublicClient(config.network)
-      const { identityRegistry } = getIdentityConfig(config.network)
-      const account = walletClient.account
-      if (!account) throw new IdentityTxFailed('Wallet client has no account')
+    return withIdentityTx(config, params.address, params.password, async (ctx) => {
       const txHashes: string[] = []
       const tokenId = BigInt(params.agentId)
 
-      // 1. Metadata update (name / type / builderCode)
       if (hasMetadata) {
-        // Read current metadata to merge unchanged fields
-        const current = await publicClient.readContract({
-          address: identityRegistry,
+        const current = await ctx.publicClient.readContract({
+          address: ctx.identityRegistry,
           abi: IDENTITY_REGISTRY_ABI,
           functionName: 'getMetadata',
           args: [tokenId],
         }) as [string, number, `0x${string}`]
 
-        const newName = params.name ?? current[0]
-        const newType = params.type ?? current[1]
-        const newBuilderCode = (params.builderCode ?? current[2]) as `0x${string}`
-
-        const txHash = await walletClient.writeContract({
-          chain: walletClient.chain,
-          account,
-          address: identityRegistry,
+        const txHash = await ctx.walletClient.writeContract({
+          chain: ctx.chain,
+          account: ctx.account,
+          address: ctx.identityRegistry,
           abi: IDENTITY_REGISTRY_ABI,
           functionName: 'updateMetadata',
-          args: [tokenId, newName, newType, newBuilderCode],
+          args: [
+            tokenId,
+            params.name ?? current[0],
+            params.type ?? current[1],
+            (params.builderCode ?? current[2]) as `0x${string}`,
+          ],
         })
-
-        await publicClient.waitForTransactionReceipt({ hash: txHash })
+        await ctx.publicClient.waitForTransactionReceipt({ hash: txHash })
         txHashes.push(txHash)
       }
 
-      // 2. URI update
-      if (params.uri !== undefined) {
-        const txHash = await walletClient.writeContract({
-          chain: walletClient.chain,
-          account,
-          address: identityRegistry,
+      if (hasUri) {
+        const txHash = await ctx.walletClient.writeContract({
+          chain: ctx.chain,
+          account: ctx.account,
+          address: ctx.identityRegistry,
           abi: IDENTITY_REGISTRY_ABI,
           functionName: 'setTokenURI',
-          args: [tokenId, params.uri],
+          args: [tokenId, params.uri!],
         })
-
-        await publicClient.waitForTransactionReceipt({ hash: txHash })
+        await ctx.publicClient.waitForTransactionReceipt({ hash: txHash })
         txHashes.push(txHash)
       }
 
-      // 3. Wallet update
-      if (params.wallet !== undefined) {
-        const txHash = await walletClient.writeContract({
-          chain: walletClient.chain,
-          account,
-          address: identityRegistry,
+      if (hasWallet) {
+        const txHash = await ctx.walletClient.writeContract({
+          chain: ctx.chain,
+          account: ctx.account,
+          address: ctx.identityRegistry,
           abi: IDENTITY_REGISTRY_ABI,
           functionName: 'setLinkedWallet',
           args: [tokenId, params.wallet as `0x${string}`],
         })
-
-        await publicClient.waitForTransactionReceipt({ hash: txHash })
+        await ctx.publicClient.waitForTransactionReceipt({ hash: txHash })
         txHashes.push(txHash)
       }
 
       return { agentId: params.agentId, txHashes }
-    } catch (err) {
-      if (err instanceof IdentityTxFailed) throw err
-      const message = err instanceof Error ? err.message : String(err)
-      throw new IdentityTxFailed(message)
-    }
+    })
   },
 
   async deregister(config: Config, params: DeregisterParams): Promise<DeregisterResult> {
@@ -199,30 +211,18 @@ export const identity = {
       throw new DeregisterNotConfirmed()
     }
 
-    try {
-      const privateKeyHex = wallets.unlock(params.address, params.password)
-      const walletClient = createIdentityWalletClient(config.network, privateKeyHex)
-      const publicClient = createIdentityPublicClient(config.network)
-      const { identityRegistry } = getIdentityConfig(config.network)
-      const account = walletClient.account
-      if (!account) throw new IdentityTxFailed('Wallet client has no account')
-
-      const txHash = await walletClient.writeContract({
-        chain: walletClient.chain,
-        account,
-        address: identityRegistry,
+    return withIdentityTx(config, params.address, params.password, async (ctx) => {
+      const txHash = await ctx.walletClient.writeContract({
+        chain: ctx.chain,
+        account: ctx.account,
+        address: ctx.identityRegistry,
         abi: IDENTITY_REGISTRY_ABI,
         functionName: 'deregister',
         args: [BigInt(params.agentId)],
       })
 
-      await publicClient.waitForTransactionReceipt({ hash: txHash })
-
+      await ctx.publicClient.waitForTransactionReceipt({ hash: txHash })
       return { agentId: params.agentId, txHash }
-    } catch (err) {
-      if (err instanceof IdentityTxFailed) throw err
-      const message = err instanceof Error ? err.message : String(err)
-      throw new IdentityTxFailed(message)
-    }
+    })
   },
 }
