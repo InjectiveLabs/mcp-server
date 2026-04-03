@@ -101,7 +101,7 @@ export const REPUTATION_REGISTRY_ABI = [
     inputs: [{ name: 'tokenId', type: 'uint256' }],
     outputs: [
       { name: 'score', type: 'uint256' },
-      { name: 'updatedAt', type: 'uint256' },
+      { name: 'feedbackCount', type: 'uint256' },
     ],
     stateMutability: 'view',
   },

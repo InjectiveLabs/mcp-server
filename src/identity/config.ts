@@ -8,6 +8,11 @@ export interface IdentityConfig {
   deployBlock: bigint
 }
 
+// EVM JSON-RPC chain IDs per PRD-021. These are for viem JSON-RPC calls to
+// Injective EVM and may differ from the ethereumChainId in src/config/ which
+// is used for Cosmos-wrapped EVM transactions. Verify against the actual
+// JSON-RPC endpoint (`eth_chainId`) before shipping to production.
+
 const TESTNET: IdentityConfig = {
   chainId: 1439,
   rpcUrl: 'https://k8s.testnet.json-rpc.injective.network',
