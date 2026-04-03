@@ -1,3 +1,10 @@
+/**
+ * Identity module — register, update, and deregister agent identities
+ * on the ERC-8004 IdentityRegistry contract via Injective EVM.
+ *
+ * Security: Private keys are decrypted, used to sign EVM transactions,
+ * then discarded. The LLM/agent never sees the private key.
+ */
 import type { Config } from '../config/index.js'
 import { wallets } from '../wallets/index.js'
 import { createIdentityWalletClient, createIdentityPublicClient } from './client.js'
@@ -60,12 +67,14 @@ export const identity = {
       const privateKeyHex = wallets.unlock(params.address, params.password)
       const walletClient = createIdentityWalletClient(config.network, privateKeyHex)
       const publicClient = createIdentityPublicClient(config.network)
-      const { identityRegistry } = getIdentityConfig(config.network)
+      const identityCfg = getIdentityConfig(config.network)
+      const account = walletClient.account
+      if (!account) throw new IdentityTxFailed('Wallet client has no account')
 
       const txHash = await walletClient.writeContract({
         chain: walletClient.chain,
-        account: walletClient.account!,
-        address: identityRegistry,
+        account,
+        address: identityCfg.identityRegistry,
         abi: IDENTITY_REGISTRY_ABI,
         functionName: 'registerAgent',
         args: [
@@ -79,17 +88,22 @@ export const identity = {
 
       const receipt = await publicClient.waitForTransactionReceipt({ hash: txHash })
 
-      // Parse agentId from Transfer event (third indexed topic = tokenId)
+      // Parse agentId from Transfer event (third indexed topic = tokenId).
+      // Filter by contract address to avoid picking up events from other contracts.
       let agentId = '0'
+      const registryAddr = identityCfg.identityRegistry.toLowerCase()
       for (const log of receipt.logs) {
-        if (log.topics.length >= 4 && log.topics[3]) {
+        if (
+          log.address?.toLowerCase() === registryAddr &&
+          log.topics.length >= 4 &&
+          log.topics[3]
+        ) {
           agentId = BigInt(log.topics[3]).toString()
           break
         }
       }
 
-      const owner = walletClient.account!.address
-      return { agentId, txHash, owner, evmAddress: owner }
+      return { agentId, txHash, owner: account.address, evmAddress: account.address }
     } catch (err) {
       if (err instanceof IdentityTxFailed) throw err
       const message = err instanceof Error ? err.message : String(err)
@@ -98,16 +112,25 @@ export const identity = {
   },
 
   async update(config: Config, params: UpdateParams): Promise<UpdateResult> {
+    const hasMetadata = params.name !== undefined || params.type !== undefined || params.builderCode !== undefined
+    const hasUri = params.uri !== undefined
+    const hasWallet = params.wallet !== undefined
+    if (!hasMetadata && !hasUri && !hasWallet) {
+      throw new IdentityTxFailed('No fields provided to update')
+    }
+
     try {
       const privateKeyHex = wallets.unlock(params.address, params.password)
       const walletClient = createIdentityWalletClient(config.network, privateKeyHex)
       const publicClient = createIdentityPublicClient(config.network)
       const { identityRegistry } = getIdentityConfig(config.network)
+      const account = walletClient.account
+      if (!account) throw new IdentityTxFailed('Wallet client has no account')
       const txHashes: string[] = []
       const tokenId = BigInt(params.agentId)
 
       // 1. Metadata update (name / type / builderCode)
-      if (params.name !== undefined || params.type !== undefined || params.builderCode !== undefined) {
+      if (hasMetadata) {
         // Read current metadata to merge unchanged fields
         const current = await publicClient.readContract({
           address: identityRegistry,
@@ -122,7 +145,7 @@ export const identity = {
 
         const txHash = await walletClient.writeContract({
           chain: walletClient.chain,
-          account: walletClient.account!,
+          account,
           address: identityRegistry,
           abi: IDENTITY_REGISTRY_ABI,
           functionName: 'updateMetadata',
@@ -137,7 +160,7 @@ export const identity = {
       if (params.uri !== undefined) {
         const txHash = await walletClient.writeContract({
           chain: walletClient.chain,
-          account: walletClient.account!,
+          account,
           address: identityRegistry,
           abi: IDENTITY_REGISTRY_ABI,
           functionName: 'setTokenURI',
@@ -152,7 +175,7 @@ export const identity = {
       if (params.wallet !== undefined) {
         const txHash = await walletClient.writeContract({
           chain: walletClient.chain,
-          account: walletClient.account!,
+          account,
           address: identityRegistry,
           abi: IDENTITY_REGISTRY_ABI,
           functionName: 'setLinkedWallet',
@@ -181,10 +204,12 @@ export const identity = {
       const walletClient = createIdentityWalletClient(config.network, privateKeyHex)
       const publicClient = createIdentityPublicClient(config.network)
       const { identityRegistry } = getIdentityConfig(config.network)
+      const account = walletClient.account
+      if (!account) throw new IdentityTxFailed('Wallet client has no account')
 
       const txHash = await walletClient.writeContract({
         chain: walletClient.chain,
-        account: walletClient.account!,
+        account,
         address: identityRegistry,
         abi: IDENTITY_REGISTRY_ABI,
         functionName: 'deregister',

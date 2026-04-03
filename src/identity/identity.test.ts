@@ -18,6 +18,7 @@ vi.mock('./client.js', () => ({
   createIdentityWalletClient: vi.fn(() => ({
     writeContract: mockWriteContract,
     account: { address: '0x' + 'ff'.repeat(20) },
+    chain: { id: 1439, name: 'Injective EVM Testnet' },
   })),
   createIdentityPublicClient: vi.fn(() => ({
     waitForTransactionReceipt: mockWaitForTransactionReceipt,
@@ -36,9 +37,11 @@ const TEST_ADDRESS = 'inj1' + 'a'.repeat(38)
 const TEST_PASSWORD = 'testpass123'
 const TEST_TX_HASH = '0x' + 'dd'.repeat(32)
 const TEST_AGENT_ID_HEX = '0x' + '00'.repeat(31) + '2a' // 42 in hex
+const TEST_REGISTRY_ADDRESS = '0x0000000000000000000000000000000000000001' // matches testnet config
 const TEST_RECEIPT = {
   logs: [
     {
+      address: TEST_REGISTRY_ADDRESS,
       topics: [
         '0x' + 'ee'.repeat(32), // Transfer event signature
         '0x' + '00'.repeat(32), // from = zero address (mint)
@@ -228,6 +231,19 @@ describe('identity.update', () => {
     })
 
     expect(result.agentId).toBe('42')
+  })
+
+  it('throws when no updatable fields provided', async () => {
+    await expect(
+      identity.update(config, {
+        address: TEST_ADDRESS,
+        password: TEST_PASSWORD,
+        agentId: '42',
+      }),
+    ).rejects.toThrow('No fields provided to update')
+
+    // Should NOT have called wallets.unlock
+    expect(wallets.unlock).not.toHaveBeenCalled()
   })
 
   it('wraps errors in IdentityTxFailed', async () => {
