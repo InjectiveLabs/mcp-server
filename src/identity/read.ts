@@ -147,7 +147,10 @@ export const identityRead = {
       toBlock: 'latest',
     })
 
-    // Filter by owner if set, then cap at limit
+    // Filter by owner if set, then cap at limit.
+    // NOTE: This filters on the original mint recipient. If an agent NFT was
+    // transferred after minting, the new owner won't appear in mint events.
+    // This is acceptable for V1 since agent transfers are rare.
     const filtered = ownerFilter
       ? logs.filter((log) => log.args.to?.toLowerCase() === ownerFilter)
       : logs

@@ -142,14 +142,6 @@ export class InvalidOrderParameters extends Error {
   }
 }
 
-export class IdentityRegistrationFailed extends Error {
-  readonly code = 'IDENTITY_REGISTRATION_FAILED'
-  constructor(reason: string) {
-    super(`Identity registration failed: ${reason}`)
-    this.name = 'IdentityRegistrationFailed'
-  }
-}
-
 export class IdentityNotFound extends Error {
   readonly code = 'IDENTITY_NOT_FOUND'
   constructor(agentId: string) {

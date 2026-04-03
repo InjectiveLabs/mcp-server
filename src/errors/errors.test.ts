@@ -18,7 +18,6 @@ import {
   UnsupportedBridgeChain,
   InvalidOrderStatesQuery,
   InvalidOrderParameters,
-  IdentityRegistrationFailed,
   IdentityNotFound,
   IdentityTxFailed,
   DeregisterNotConfirmed,
@@ -146,13 +145,6 @@ describe('error classes', () => {
     expect(err.message).toContain('price must be > 0')
   })
 
-  it('IdentityRegistrationFailed includes reason', () => {
-    const err = new IdentityRegistrationFailed('duplicate name')
-    expect(err.code).toBe('IDENTITY_REGISTRATION_FAILED')
-    expect(err.name).toBe('IdentityRegistrationFailed')
-    expect(err.message).toContain('duplicate name')
-  })
-
   it('IdentityNotFound includes agentId', () => {
     const err = new IdentityNotFound('42')
     expect(err.code).toBe('IDENTITY_NOT_FOUND')
@@ -194,7 +186,6 @@ describe('error classes', () => {
       new UnsupportedBridgeChain('x'),
       new InvalidOrderStatesQuery(),
       new InvalidOrderParameters('x'),
-      new IdentityRegistrationFailed('x'),
       new IdentityNotFound('x'),
       new IdentityTxFailed('x'),
       new DeregisterNotConfirmed(),

@@ -832,7 +832,7 @@ server.tool(
     })
     return {
       content: [{
-        type: 'text' as const,
+        type: 'text',
         text: JSON.stringify(result, null, 2),
       }],
     }
@@ -859,7 +859,7 @@ server.tool(
     })
     return {
       content: [{
-        type: 'text' as const,
+        type: 'text',
         text: JSON.stringify(result, null, 2),
       }],
     }
@@ -881,7 +881,7 @@ server.tool(
     })
     return {
       content: [{
-        type: 'text' as const,
+        type: 'text',
         text: JSON.stringify(result, null, 2),
       }],
     }
@@ -898,7 +898,7 @@ server.tool(
     const result = await identityRead.status(config, { agentId })
     return {
       content: [{
-        type: 'text' as const,
+        type: 'text',
         text: JSON.stringify(result, null, 2),
       }],
     }
@@ -917,7 +917,7 @@ server.tool(
     const result = await identityRead.list(config, { owner, type, limit })
     return {
       content: [{
-        type: 'text' as const,
+        type: 'text',
         text: JSON.stringify(result, null, 2),
       }],
     }
