@@ -1,6 +1,6 @@
 # Injective MCP Server
 
-An [MCP (Model Context Protocol)](https://modelcontextprotocol.io/) server that gives AI agents full trading capabilities on [Injective](https://injective.com) — perpetual futures, spot transfers, cross-chain bridging, and raw EVM transactions.
+An [MCP (Model Context Protocol)](https://modelcontextprotocol.io/) server that gives AI agents full trading capabilities on [Injective](https://injective.com) — perpetual futures, spot transfers, cross-chain bridging, raw EVM transactions, and on-chain agent identity (ERC-8004).
 
 Connect it to Claude Desktop or Claude Code and trade with natural language.
 
@@ -55,6 +55,15 @@ Connect it to Claude Desktop or Claude Code and trade with natural language.
 | Tool | Description |
 |---|---|
 | `evm_broadcast` | Broadcast a raw EVM transaction on Injective EVM. |
+
+### Identity (ERC-8004)
+| Tool | Description |
+|---|---|
+| `agent_register` | Register a new AI agent identity on the ERC-8004 registry. Costs gas. |
+| `agent_update` | Update agent metadata, token URI, or linked wallet. Costs gas. |
+| `agent_deregister` | Permanently burn an agent's identity NFT (irreversible). Costs gas. |
+| `agent_status` | Get full agent details: metadata, wallet, owner, reputation. Read-only. |
+| `agent_list` | Find registered agents with optional owner/type filters. Read-only. |
 
 ---
 
