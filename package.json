@@ -23,7 +23,9 @@
     "@injectivelabs/sdk-ts": "^1.14.27",
     "@injectivelabs/utils": "^1.14.27",
     "@modelcontextprotocol/sdk": "^1.0.4",
+    "bech32": "^2.0.0",
     "decimal.js": "^10.4.3",
+    "viem": "^2.47.6",
     "zod": "^3.22.0"
   },
   "devDependencies": {
