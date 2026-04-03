@@ -815,19 +815,26 @@ server.tool(
 
 server.tool(
   'agent_register',
-  'Register a new AI agent identity on the Injective ERC-8004 registry. Mints an NFT that gives your agent on-chain identity, discoverability, and reputation tracking. Wallet linking only works when the wallet address matches the keystore address (same key). IMPORTANT: This is a real on-chain transaction that costs gas.',
+  'Register a new AI agent identity on the Injective ERC-8004 registry. Mints an NFT with an Agent Card (auto-uploaded to IPFS via Pinata when PINATA_JWT is set). Wallet linking only works when the wallet matches the keystore address. IMPORTANT: Real on-chain transaction that costs gas.',
   {
     address: injAddress.describe('Your inj1... address (must be in local keystore).'),
     password: z.string().describe('Keystore password to decrypt the signing key.'),
     name: z.string().min(1).describe('Human-readable agent name.'),
     type: z.string().min(1).describe('Agent type (e.g., "trading", "analytics", "data").'),
     builderCode: z.string().min(1).describe('Builder identifier string.'),
-    wallet: ethAddress.optional().describe('EVM wallet to link. Only works if it matches the keystore address (same key). Omit to skip.'),
-    uri: z.string().optional().describe('Token URI (e.g., IPFS link to agent card JSON). Can be set later via agent_update.'),
+    description: z.string().optional().describe('Short description of what the agent does. Shown on 8004scan.'),
+    image: z.string().optional().describe('Image URL (https://, http://, or ipfs://). Displayed on 8004scan.'),
+    services: z.array(z.object({
+      type: z.enum(['a2a', 'mcp', 'rest', 'grpc', 'webhook', 'custom']).describe('Service type.'),
+      url: z.string().url().describe('Service endpoint URL.'),
+      description: z.string().optional().describe('Service description.'),
+    })).optional().describe('Service endpoints the agent exposes.'),
+    wallet: ethAddress.optional().describe('EVM wallet to link. Only works if it matches the keystore address. Omit to skip.'),
+    uri: z.string().optional().describe('Pre-built token URI. If provided, skips auto card generation and IPFS upload.'),
   },
-  async ({ address, password, name, type, builderCode, wallet, uri }) => {
+  async ({ address, password, name, type, builderCode, description, image, services, wallet, uri }) => {
     const result = await identity.register(config, {
-      address, password, name, type, builderCode, wallet, uri,
+      address, password, name, type, builderCode, description, image, services, wallet, uri,
     })
     return {
       content: [{
@@ -840,7 +847,7 @@ server.tool(
 
 server.tool(
   'agent_update',
-  'Update an existing agent\'s metadata (name, type, builder code), token URI, or linked wallet. Only the agent owner can update. Each field change is a separate on-chain transaction.',
+  'Update an existing agent\'s metadata, description, image, services, or wallet. Card-level changes (description, image, services) auto-rebuild and re-upload the Agent Card to IPFS. Requires PINATA_JWT for card updates.',
   {
     address: injAddress.describe('Your inj1... address (must be in local keystore).'),
     password: z.string().describe('Keystore password to decrypt the signing key.'),
@@ -848,12 +855,20 @@ server.tool(
     name: z.string().min(1).optional().describe('New agent name.'),
     type: z.string().min(1).optional().describe('New agent type (e.g., "trading", "analytics").'),
     builderCode: z.string().min(1).optional().describe('New builder identifier string.'),
-    uri: z.string().optional().describe('New token URI (e.g., IPFS link).'),
+    description: z.string().optional().describe('New agent description.'),
+    image: z.string().optional().describe('New image URL (https://, http://, or ipfs://).'),
+    services: z.array(z.object({
+      type: z.enum(['a2a', 'mcp', 'rest', 'grpc', 'webhook', 'custom']).describe('Service type.'),
+      url: z.string().url().describe('Service endpoint URL.'),
+      description: z.string().optional().describe('Service description.'),
+    })).optional().describe('New service endpoints (replaces existing).'),
+    removeServices: z.array(z.string()).optional().describe('Service types to remove from the card.'),
+    uri: z.string().optional().describe('Pre-built token URI. Skips card generation if provided.'),
     wallet: ethAddress.optional().describe('New linked EVM wallet. Only works if it matches the keystore address.'),
   },
-  async ({ address, password, agentId, name, type, builderCode, uri, wallet }) => {
+  async ({ address, password, agentId, name, type, builderCode, description, image, services, removeServices, uri, wallet }) => {
     const result = await identity.update(config, {
-      address, password, agentId, name, type, builderCode, uri, wallet,
+      address, password, agentId, name, type, builderCode, description, image, services, removeServices, uri, wallet,
     })
     return {
       content: [{
