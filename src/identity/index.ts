@@ -108,10 +108,6 @@ export interface RevokeFeedbackResult {
 
 // ─── Helpers ──────────────────────────────────────────────────────────────
 
-function normalizeKey(hex: string): `0x${string}` {
-  return (hex.startsWith('0x') ? hex : `0x${hex}`) as `0x${string}`
-}
-
 function requirePinataJwt(): string {
   const jwt = process.env['PINATA_JWT']
   if (!jwt) {
@@ -124,18 +120,20 @@ function requirePinataJwt(): string {
 
 function createClient(config: Config, address: string, password: string, storage?: PinataStorage): AgentClient {
   const hex = wallets.unlock(address, password)
-  return new AgentClient({
-    privateKey: normalizeKey(hex),
-    network: config.network,
-    storage,
-    audit: false,
-  })
+  const privateKey = (hex.startsWith('0x') ? hex : `0x${hex}`) as `0x${string}`
+  return new AgentClient({ privateKey, network: config.network, storage, audit: false })
 }
 
 interface WalletLinkInfo {
   walletTxHash?: string
   walletLinkSkipped?: boolean
   walletLinkReason?: string
+}
+
+function wrapSdkError(err: unknown, ...passthrough: (new (...a: never[]) => Error)[]): never {
+  if (err instanceof IdentityTxFailed) throw err
+  for (const E of passthrough) if (err instanceof E) throw err
+  throw new IdentityTxFailed(err instanceof Error ? err.message : String(err))
 }
 
 function walletLinkInfo(wallet: string | undefined, signerAddress: string, txHashes: `0x${string}`[]): WalletLinkInfo {
@@ -180,10 +178,7 @@ export const identity = {
         cardUri: r.cardUri,
         ...walletLinkInfo(params.wallet, client.address, r.txHashes),
       }
-    } catch (err) {
-      if (err instanceof IdentityTxFailed) throw err
-      throw new IdentityTxFailed(err instanceof Error ? err.message : String(err))
-    }
+    } catch (err) { wrapSdkError(err) }
   },
 
   async update(config: Config, params: UpdateParams): Promise<UpdateResult> {
@@ -208,8 +203,10 @@ export const identity = {
       })
 
       let cardUri: string | undefined
-      if (hasCardUpdate || params.uri !== undefined) {
-        const status = await client.getStatus(id)
+      if (params.uri !== undefined) {
+        cardUri = params.uri                     // URI supplied directly — no RPC needed
+      } else if (hasCardUpdate) {
+        const status = await client.getStatus(id) // SDK doesn't return new URI in UpdateResult
         cardUri = status.tokenUri
       }
 
@@ -219,10 +216,7 @@ export const identity = {
         cardUri,
         ...walletLinkInfo(params.wallet, client.address, r.txHashes),
       }
-    } catch (err) {
-      if (err instanceof IdentityTxFailed) throw err
-      throw new IdentityTxFailed(err instanceof Error ? err.message : String(err))
-    }
+    } catch (err) { wrapSdkError(err) }
   },
 
   async deregister(config: Config, params: DeregisterParams): Promise<DeregisterResult> {
@@ -232,10 +226,7 @@ export const identity = {
       const client = createClient(config, params.address, params.password)
       const r = await client.deregister(BigInt(params.agentId))
       return { agentId: params.agentId, txHash: r.txHash }
-    } catch (err) {
-      if (err instanceof IdentityTxFailed || err instanceof DeregisterNotConfirmed) throw err
-      throw new IdentityTxFailed(err instanceof Error ? err.message : String(err))
-    }
+    } catch (err) { wrapSdkError(err, DeregisterNotConfirmed) }
   },
 
   async giveFeedback(config: Config, params: GiveFeedbackParams): Promise<GiveFeedbackResult> {
@@ -257,10 +248,7 @@ export const identity = {
         agentId: params.agentId,
         feedbackIndex: r.feedbackIndex.toString(),
       }
-    } catch (err) {
-      if (err instanceof IdentityTxFailed) throw err
-      throw new IdentityTxFailed(err instanceof Error ? err.message : String(err))
-    }
+    } catch (err) { wrapSdkError(err) }
   },
 
   async revokeFeedback(config: Config, params: RevokeFeedbackParams): Promise<RevokeFeedbackResult> {
@@ -272,9 +260,6 @@ export const identity = {
       })
 
       return { txHash: r.txHash, agentId: params.agentId }
-    } catch (err) {
-      if (err instanceof IdentityTxFailed) throw err
-      throw new IdentityTxFailed(err instanceof Error ? err.message : String(err))
-    }
+    } catch (err) { wrapSdkError(err) }
   },
 }

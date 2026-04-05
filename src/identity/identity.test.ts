@@ -219,7 +219,7 @@ describe('identity.update', () => {
     })
 
     expect(result.agentId).toBe('42')
-    expect(result.cardUri).toBe('ipfs://QmUpdatedCard')
+    expect(result.cardUri).toBe('https://example.com/card.json') // uri supplied directly, no RPC needed
   })
 
   it('wallet === signer with 2 txHashes: result has walletTxHash', async () => {

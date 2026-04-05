@@ -107,8 +107,9 @@ export const identityRead = {
       agents = agents.filter((a) => a.agentType === params.type)
     }
 
+    const filteredTotal = agents.length
     agents = agents.slice(0, limit)
-    return { agents, total: agents.length }
+    return { agents, total: filteredTotal }
   },
 
   async reputation(config: Config, params: ReputationParams): Promise<ReputationResult> {
@@ -125,7 +126,8 @@ export const identityRead = {
         count: rep.count,
         clients: rep.clients as string[],
       }
-    } catch {
+    } catch (_err) {
+      // Reputation is best-effort — return zeros if the agent has no feedback or registry errors
       return { agentId: params.agentId, score: 0, count: 0, clients: [] }
     }
   },
@@ -144,13 +146,14 @@ export const identityRead = {
         entries: entries.map((e) => ({
           client: e.client,
           feedbackIndex: Number(e.feedbackIndex),
-          value: Number(e.value) / Math.pow(10, e.decimals),
-          tag1: e.tags[0],
-          tag2: e.tags[1],
+          value: Number(e.value) / 10 ** e.decimals,
+          tag1: e.tags[0] ?? '',
+          tag2: e.tags[1] ?? '',
           revoked: e.revoked,
         })),
       }
-    } catch {
+    } catch (_err) {
+      // Feedback list is best-effort — return empty if agent has no feedback or registry errors
       return { agentId: params.agentId, entries: [] }
     }
   },

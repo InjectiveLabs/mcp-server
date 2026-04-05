@@ -223,7 +223,7 @@ describe('identityRead.list', () => {
     const result = await identityRead.list(config, { limit: 2 })
 
     expect(result.agents).toHaveLength(2)
-    expect(result.total).toBe(2)
+    expect(result.total).toBe(3)
   })
 
   it('returns empty array when no agents exist', async () => {
