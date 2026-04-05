@@ -19,6 +19,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@injective/agent-sdk": "file:../injective-agent-cli/packages/sdk",
     "@injectivelabs/networks": "^1.14.27",
     "@injectivelabs/sdk-ts": "^1.14.27",
     "@injectivelabs/utils": "^1.14.27",
