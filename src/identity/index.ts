@@ -26,6 +26,7 @@ export interface RegisterParams {
   description?: string
   image?: string
   services?: ServiceEntry[]
+  x402?: boolean
 }
 
 export interface RegisterResult {
@@ -52,6 +53,7 @@ export interface UpdateParams {
   image?: string
   services?: ServiceEntry[]
   removeServices?: string[]
+  x402?: boolean
 }
 
 export interface UpdateResult {
@@ -168,6 +170,7 @@ export const identity = {
         description: params.description,
         image: params.image,
         services: params.services,
+        x402: params.x402,
       })
 
       return {
@@ -184,6 +187,7 @@ export const identity = {
   async update(config: Config, params: UpdateParams): Promise<UpdateResult> {
     const hasCardUpdate = params.description !== undefined || params.image !== undefined
       || params.services !== undefined || (params.removeServices?.length ?? 0) > 0
+      || params.x402 !== undefined
     const jwt = (hasCardUpdate && !params.uri) ? requirePinataJwt() : undefined
     const storage = jwt ? new PinataStorage({ jwt }) : undefined
 
@@ -200,6 +204,7 @@ export const identity = {
         image: params.image,
         services: params.services,
         removeServices: params.removeServices as ServiceType[] | undefined,
+        x402: params.x402,
       })
 
       let cardUri: string | undefined
