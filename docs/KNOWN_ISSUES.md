@@ -2,7 +2,7 @@
 
 ## SDK: Wallet Linking Deadline Too Far
 
-**Status**: Blocked on SDK fix  
+**Status**: Fixed in SDK (2026-04-05) — `walletLinkDeadline` default changed 600s → 240s  
 **Component**: `@injective/agent-sdk` setAgentWallet  
 **Symptom**: `Identity transaction failed: Simulation failed for setAgentWallet: The contract function "setAgentWallet" reverted with the following reason: deadline too far`  
 **Trigger**: Registering an agent with wallet parameter or without explicit wallet (defaults to signer address)

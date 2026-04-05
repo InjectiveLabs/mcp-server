@@ -70,68 +70,26 @@ async function main() {
   console.log(`   Owner: ${status.owner}`)
   console.log(`   Reputation: ${status.reputation.score}/${status.reputation.count}\n`)
 
-  // ─── Give feedback ─────────────────────────────────────────────────────
+  // ─── Read reputation (empty baseline) ────────────────────────────────
 
-  console.log('⭐ Giving feedback...')
-  const fbResult = await identity.giveFeedback(config, {
-    address,
-    password: PASSWORD,
-    agentId,
-    value: 90,
-    valueDecimals: 0,
-    tag1: 'accuracy',
-    tag2: 'test',
-  })
-  console.log(`✅ Feedback given!`)
-  console.log(`   TX: ${fbResult.txHash}`)
-  console.log(`   Index: ${fbResult.feedbackIndex}\n`)
-
-  // Wait for block
-  await new Promise((r) => setTimeout(r, 2000))
-
-  // ─── Read reputation ──────────────────────────────────────────────────
-
-  console.log('📈 Fetching reputation...')
+  console.log('📈 Fetching reputation (baseline)...')
   const rep = await identityRead.reputation(config, { agentId })
-  console.log(`✅ Reputation:`)
-  console.log(`   Score: ${rep.score}`)
-  console.log(`   Count: ${rep.count}\n`)
+  console.log(`✅ Reputation: score=${rep.score}, count=${rep.count}\n`)
 
-  // ─── List feedback ────────────────────────────────────────────────────
+  // ─── List feedback (empty baseline) ──────────────────────────────────
 
-  console.log('📝 Listing feedback...')
+  console.log('📝 Listing feedback (baseline)...')
   const fbList = await identityRead.feedbackList(config, { agentId })
-  console.log(`✅ Found ${fbList.entries.length} entries`)
-  fbList.entries.forEach((e) => {
-    console.log(`   • #${e.feedbackIndex}: value=${e.value}, tag=${e.tag1}`)
-  })
-  console.log()
+  console.log(`✅ Entries: ${fbList.entries.length}\n`)
 
-  // ─── Revoke feedback ──────────────────────────────────────────────────
+  // ─── Note: feedback requires a second (non-owner) wallet ─────────────
+  // The contract rejects self-feedback ("Self-feedback not allowed").
+  // Use scripts/full-flow-test.ts to test the complete feedback + revoke
+  // lifecycle — it funds an ephemeral reviewer wallet automatically.
 
-  console.log('🔄 Revoking feedback...')
-  const revokeResult = await identity.revokeFeedback(config, {
-    address,
-    password: PASSWORD,
-    agentId,
-    feedbackIndex: Number(fbResult.feedbackIndex!),
-  })
-  console.log(`✅ Revoked!`)
-  console.log(`   TX: ${revokeResult.txHash}\n`)
-
-  // Wait for block
-  await new Promise((r) => setTimeout(r, 2000))
-
-  // ─── Final reputation ─────────────────────────────────────────────────
-
-  console.log('📈 Final reputation...')
-  const rep2 = await identityRead.reputation(config, { agentId })
-  console.log(`✅ After revoke:`)
-  console.log(`   Score: ${rep2.score}`)
-  console.log(`   Count: ${rep2.count}\n`)
-
-  console.log(`✨ Full E2E test complete!`)
+  console.log(`✨ E2E test complete (registration + reads)!`)
   console.log(`Agent: ${agentName} (ID: ${agentId})`)
+  console.log(`For feedback/revoke lifecycle: npx tsx scripts/full-flow-test.ts`)
 }
 
 main().catch((err) => {
