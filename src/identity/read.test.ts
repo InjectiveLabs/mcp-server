@@ -1,26 +1,33 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { testConfig } from '../test-utils/index.js'
 import { IdentityNotFound } from '../errors/index.js'
-import { encodeStringMetadata } from './helpers.js'
 
 // ─── Mocks ──────────────────────────────────────────────────────────────────
 
-const mockReadContract = vi.fn()
-const mockGetLogs = vi.fn()
+const mockGetEnrichedAgent = vi.fn()
+const mockListAgents = vi.fn()
+const mockGetAgentsByOwner = vi.fn()
+const mockGetReputation = vi.fn()
+const mockGetFeedbackEntries = vi.fn()
 
-vi.mock('./client.js', () => ({
-  createIdentityPublicClient: vi.fn(() => ({
-    readContract: mockReadContract,
-    getLogs: mockGetLogs,
+vi.mock('@injective/agent-sdk', () => ({
+  AgentReadClient: vi.fn().mockImplementation(() => ({
+    getEnrichedAgent: mockGetEnrichedAgent,
+    listAgents: mockListAgents,
+    getAgentsByOwner: mockGetAgentsByOwner,
+    getReputation: mockGetReputation,
+    getFeedbackEntries: mockGetFeedbackEntries,
+    getClients: vi.fn().mockResolvedValue([]),
   })),
 }))
 
-vi.mock('@injectivelabs/sdk-ts', () => ({
-  getEthereumAddress: vi.fn((inj: string) => {
-    // Deterministic mock conversion: inj1... → 0x...
-    if (inj === 'inj1' + 'a'.repeat(38)) return '0x' + '11'.repeat(20)
-    return '0x' + '99'.repeat(20)
-  }),
+vi.mock('../evm/index.js', () => ({
+  evm: {
+    injAddressToEth: vi.fn((inj: string) => {
+      if (inj === 'inj1' + 'a'.repeat(38)) return '0x' + '11'.repeat(20)
+      return '0x' + '99'.repeat(20)
+    }),
+  },
 }))
 
 import { identityRead } from './read.js'
@@ -32,37 +39,26 @@ const AGENT_ID = '42'
 const OWNER_ADDRESS = '0x' + 'ff'.repeat(20)
 const LINKED_WALLET = '0x' + 'aa'.repeat(20)
 const TOKEN_URI = 'https://example.com/agent/42.json'
-const REPUTATION_COUNT = 3n
-const REPUTATION_VALUE = 850n
-const REPUTATION_DECIMALS = 1
-
-// Pre-encoded metadata values
-const ENCODED_NAME = encodeStringMetadata('TestAgent')
-const ENCODED_BUILDER_CODE = encodeStringMetadata('builder-xyz')
-const ENCODED_AGENT_TYPE = encodeStringMetadata('autonomous')
 
 // ─── identityRead.status ────────────────────────────────────────────────────
 
 describe('identityRead.status', () => {
   beforeEach(() => {
     vi.clearAllMocks()
-
-    // Mock the 6 readContract calls in Promise.all, then 2 sequential reputation calls:
-    // 1-6: getMetadata(name), getMetadata(builderCode), getMetadata(agentType), ownerOf, tokenURI, getAgentWallet
-    // 7: getClients → client addresses
-    // 8: getSummary → [count, summaryValue, decimals]
-    mockReadContract
-      .mockResolvedValueOnce(ENCODED_NAME)
-      .mockResolvedValueOnce(ENCODED_BUILDER_CODE)
-      .mockResolvedValueOnce(ENCODED_AGENT_TYPE)
-      .mockResolvedValueOnce(OWNER_ADDRESS)
-      .mockResolvedValueOnce(TOKEN_URI)
-      .mockResolvedValueOnce(LINKED_WALLET)
-      .mockResolvedValueOnce([OWNER_ADDRESS])  // getClients
-      .mockResolvedValueOnce([REPUTATION_COUNT, REPUTATION_VALUE, REPUTATION_DECIMALS])  // getSummary
   })
 
-  it('returns full agent details including reputation', async () => {
+  it('maps SDK EnrichedAgentResult to MCP StatusResult', async () => {
+    mockGetEnrichedAgent.mockResolvedValue({
+      agentId: 42n,
+      name: 'TestAgent',
+      type: 'autonomous',
+      builderCode: 'builder-xyz',
+      owner: OWNER_ADDRESS,
+      tokenUri: TOKEN_URI,
+      wallet: LINKED_WALLET,
+      reputation: { score: 85, count: 3 },
+    })
+
     const result = await identityRead.status(config, { agentId: AGENT_ID })
 
     expect(result).toEqual({
@@ -80,48 +76,28 @@ describe('identityRead.status', () => {
     })
   })
 
-  it('returns getSummary reputation values as strings', async () => {
-    // Use specific values to verify decimal conversion
-    mockReadContract.mockReset()
-    mockReadContract
-      .mockResolvedValueOnce(encodeStringMetadata('BigRepAgent'))
-      .mockResolvedValueOnce(ENCODED_BUILDER_CODE)
-      .mockResolvedValueOnce(ENCODED_AGENT_TYPE)
-      .mockResolvedValueOnce(OWNER_ADDRESS)
-      .mockResolvedValueOnce(TOKEN_URI)
-      .mockResolvedValueOnce(LINKED_WALLET)
-      .mockResolvedValueOnce([OWNER_ADDRESS])  // getClients
-      .mockResolvedValueOnce([10n, 4500n, 2])  // getSummary
+  it('converts reputation score/count to strings', async () => {
+    mockGetEnrichedAgent.mockResolvedValue({
+      agentId: 42n,
+      name: 'BigRepAgent',
+      type: 'trading',
+      builderCode: 'b',
+      owner: OWNER_ADDRESS,
+      tokenUri: TOKEN_URI,
+      wallet: LINKED_WALLET,
+      reputation: { score: 4500, count: 10 },
+    })
 
     const result = await identityRead.status(config, { agentId: AGENT_ID })
 
-    expect(result.reputation.score).toBe('45')
+    expect(result.reputation.score).toBe('4500')
     expect(result.reputation.count).toBe('10')
     expect(typeof result.reputation.score).toBe('string')
     expect(typeof result.reputation.count).toBe('string')
   })
 
-  it('decodes empty metadata as empty string', async () => {
-    mockReadContract.mockReset()
-    mockReadContract
-      .mockResolvedValueOnce('0x') // name → empty
-      .mockResolvedValueOnce('0x') // builderCode → empty
-      .mockResolvedValueOnce('0x') // agentType → empty
-      .mockResolvedValueOnce(OWNER_ADDRESS)
-      .mockResolvedValueOnce(TOKEN_URI)
-      .mockResolvedValueOnce(LINKED_WALLET)
-      .mockResolvedValueOnce([])  // getClients → empty (no feedback)
-
-    const result = await identityRead.status(config, { agentId: AGENT_ID })
-
-    expect(result.name).toBe('')
-    expect(result.builderCode).toBe('')
-    expect(result.agentType).toBe('')
-  })
-
-  it('throws IdentityNotFound when readContract fails with ERC721 error', async () => {
-    mockReadContract.mockReset()
-    mockReadContract.mockRejectedValue(new Error('ERC721: invalid token ID'))
+  it('throws IdentityNotFound on ERC721 error', async () => {
+    mockGetEnrichedAgent.mockRejectedValue(new Error('ERC721: invalid token ID'))
 
     await expect(
       identityRead.status(config, { agentId: '999' }),
@@ -133,8 +109,7 @@ describe('identityRead.status', () => {
   })
 
   it('throws IdentityNotFound for nonexistent token error', async () => {
-    mockReadContract.mockReset()
-    mockReadContract.mockRejectedValue(new Error('query for nonexistent token'))
+    mockGetEnrichedAgent.mockRejectedValue(new Error('query for nonexistent token'))
 
     await expect(
       identityRead.status(config, { agentId: '888' }),
@@ -142,8 +117,7 @@ describe('identityRead.status', () => {
   })
 
   it('throws IdentityNotFound for invalid token error', async () => {
-    mockReadContract.mockReset()
-    mockReadContract.mockRejectedValue(new Error('invalid token'))
+    mockGetEnrichedAgent.mockRejectedValue(new Error('invalid token'))
 
     await expect(
       identityRead.status(config, { agentId: '777' }),
@@ -151,9 +125,7 @@ describe('identityRead.status', () => {
   })
 
   it('re-throws non-identity errors as-is', async () => {
-    mockReadContract.mockReset()
-    const networkErr = new Error('network timeout')
-    mockReadContract.mockRejectedValue(networkErr)
+    mockGetEnrichedAgent.mockRejectedValue(new Error('network timeout'))
 
     await expect(
       identityRead.status(config, { agentId: AGENT_ID }),
@@ -167,176 +139,108 @@ describe('identityRead.status', () => {
 
 // ─── identityRead.list ──────────────────────────────────────────────────────
 
-function makeMintLog(tokenId: bigint, to: string) {
-  return {
-    args: {
-      from: '0x0000000000000000000000000000000000000000',
-      to,
-      tokenId,
-    },
-  }
-}
-
 describe('identityRead.list', () => {
   beforeEach(() => {
     vi.clearAllMocks()
-
-    // Default: 3 mint events
-    mockGetLogs.mockResolvedValue([
-      makeMintLog(1n, OWNER_ADDRESS),
-      makeMintLog(2n, OWNER_ADDRESS),
-      makeMintLog(3n, '0x' + 'bb'.repeat(20)),
-    ])
-
-    // Default readContract mock: per-key getMetadata + ownerOf for each token
-    mockReadContract.mockImplementation(async (call: { functionName: string; args: unknown[] }) => {
-      const id = Number(call.args[0])
-      if (call.functionName === 'getMetadata') {
-        const key = call.args[1] as string
-        if (key === 'name') return encodeStringMetadata(`Agent${id}`)
-        if (key === 'agentType') {
-          const types = ['typeC', 'typeA', 'typeB']
-          return encodeStringMetadata(types[id % 3]!)
-        }
-        return '0x'
-      }
-      if (call.functionName === 'ownerOf') {
-        return id <= 2 ? OWNER_ADDRESS : '0x' + 'bb'.repeat(20)
-      }
-      return undefined
-    })
   })
 
-  it('returns agents from mint events', async () => {
+  it('without owner: calls sdk.listAgents()', async () => {
+    mockListAgents.mockResolvedValue({
+      agents: [
+        { agentId: 1n, name: 'Agent1', type: 'trading', owner: OWNER_ADDRESS },
+        { agentId: 2n, name: 'Agent2', type: 'analytics', owner: OWNER_ADDRESS },
+      ],
+    })
+
     const result = await identityRead.list(config, {})
 
-    expect(result.agents).toHaveLength(3)
-    expect(result.total).toBe(3)
+    expect(mockListAgents).toHaveBeenCalledWith({ limit: 20 })
+    expect(mockGetAgentsByOwner).not.toHaveBeenCalled()
+    expect(result.agents).toHaveLength(2)
     expect(result.agents[0]).toEqual({
       agentId: '1',
       name: 'Agent1',
-      agentType: 'typeA',
+      agentType: 'trading',
       owner: OWNER_ADDRESS,
     })
   })
 
-  it('filters by agent type', async () => {
-    // Agent1 has typeA, Agent2 has typeB, Agent3 has typeC
-    const result = await identityRead.list(config, { type: 'typeA' })
-
-    expect(result.agents).toHaveLength(1)
-    expect(result.agents[0]!.agentId).toBe('1')
-    expect(result.agents[0]!.agentType).toBe('typeA')
-  })
-
-  it('filters by owner address', async () => {
-    const otherOwner = '0x' + 'bb'.repeat(20)
-    const result = await identityRead.list(config, { owner: otherOwner })
-
-    // Only log with tokenId=3 has to=otherOwner
-    expect(result.agents).toHaveLength(1)
-    expect(result.agents[0]!.agentId).toBe('3')
-    expect(result.agents[0]!.owner).toBe(otherOwner)
-  })
-
-  it('respects limit parameter', async () => {
-    const result = await identityRead.list(config, { limit: 2 })
-
-    // Should only process the first 2 mint events
-    expect(result.agents).toHaveLength(2)
-    expect(result.total).toBe(2)
-    expect(result.agents[0]!.agentId).toBe('1')
-    expect(result.agents[1]!.agentId).toBe('2')
-  })
-
-  it('skips burned agents when readContract throws', async () => {
-    // Token 2 is burned (readContract reverts)
-    mockReadContract.mockImplementation(async (call: { functionName: string; args: unknown[] }) => {
-      const id = Number(call.args[0])
-      if (id === 2) throw new Error('ERC721: invalid token ID')
-      if (call.functionName === 'getMetadata') {
-        const key = call.args[1] as string
-        if (key === 'name') return encodeStringMetadata(`Agent${id}`)
-        if (key === 'agentType') return encodeStringMetadata('typeA')
-        return '0x'
-      }
-      if (call.functionName === 'ownerOf') {
-        return OWNER_ADDRESS
-      }
-      return undefined
-    })
-
-    const result = await identityRead.list(config, {})
-
-    // Should have 2 agents (1 and 3), token 2 skipped
-    expect(result.agents).toHaveLength(2)
-    expect(result.agents.map((a) => a.agentId)).toEqual(['1', '3'])
-  })
-
-  it('handles inj1... owner address conversion', async () => {
+  it('with owner (inj1...): converts to 0x, calls sdk.getAgentsByOwner()', async () => {
     const injAddress = 'inj1' + 'a'.repeat(38)
     const convertedAddress = '0x' + '11'.repeat(20)
 
-    // Set up logs where one matches the converted address
-    mockGetLogs.mockResolvedValue([
-      makeMintLog(10n, convertedAddress),
-      makeMintLog(11n, '0x' + 'dd'.repeat(20)),
-    ])
-
-    mockReadContract.mockImplementation(async (call: { functionName: string; args: unknown[] }) => {
-      if (call.functionName === 'getMetadata') {
-        const key = call.args[1] as string
-        if (key === 'name') return encodeStringMetadata('InjAgent')
-        if (key === 'agentType') return encodeStringMetadata('typeA')
-        return '0x'
-      }
-      if (call.functionName === 'ownerOf') {
-        return convertedAddress
-      }
-      return undefined
+    mockGetAgentsByOwner.mockResolvedValue({
+      agents: [
+        { agentId: 10n, name: 'InjAgent', type: 'trading', owner: convertedAddress },
+      ],
     })
 
     const result = await identityRead.list(config, { owner: injAddress })
 
-    // Should filter logs by the converted 0x address
+    expect(mockGetAgentsByOwner).toHaveBeenCalledWith(convertedAddress, { limit: 20 })
+    expect(mockListAgents).not.toHaveBeenCalled()
     expect(result.agents).toHaveLength(1)
     expect(result.agents[0]!.agentId).toBe('10')
   })
 
-  it('defaults limit to 20', async () => {
-    // Create 25 mint logs
-    const manyLogs = Array.from({ length: 25 }, (_, i) =>
-      makeMintLog(BigInt(i + 1), OWNER_ADDRESS),
-    )
-    mockGetLogs.mockResolvedValue(manyLogs)
-
-    mockReadContract.mockImplementation(async (call: { functionName: string; args: unknown[] }) => {
-      const id = Number(call.args[0])
-      if (call.functionName === 'getMetadata') {
-        const key = call.args[1] as string
-        if (key === 'name') return encodeStringMetadata(`Agent${id}`)
-        if (key === 'agentType') return encodeStringMetadata('typeA')
-        return '0x'
-      }
-      if (call.functionName === 'ownerOf') {
-        return OWNER_ADDRESS
-      }
-      return undefined
+  it('with 0x owner: calls sdk.getAgentsByOwner() directly', async () => {
+    mockGetAgentsByOwner.mockResolvedValue({
+      agents: [
+        { agentId: 5n, name: 'EvmAgent', type: 'trading', owner: OWNER_ADDRESS },
+      ],
     })
 
-    const result = await identityRead.list(config, {})
+    const result = await identityRead.list(config, { owner: OWNER_ADDRESS })
 
-    // Default limit is 20
-    expect(result.agents).toHaveLength(20)
+    expect(mockGetAgentsByOwner).toHaveBeenCalledWith(OWNER_ADDRESS, { limit: 20 })
+    expect(result.agents).toHaveLength(1)
   })
 
-  it('returns empty array when no mint events exist', async () => {
-    mockGetLogs.mockResolvedValue([])
+  it('with type filter: applies filter after fetch', async () => {
+    mockListAgents.mockResolvedValue({
+      agents: [
+        { agentId: 1n, name: 'Agent1', type: 'trading', owner: OWNER_ADDRESS },
+        { agentId: 2n, name: 'Agent2', type: 'analytics', owner: OWNER_ADDRESS },
+        { agentId: 3n, name: 'Agent3', type: 'trading', owner: OWNER_ADDRESS },
+      ],
+    })
+
+    const result = await identityRead.list(config, { type: 'trading' })
+
+    expect(result.agents).toHaveLength(2)
+    expect(result.agents.every((a) => a.agentType === 'trading')).toBe(true)
+  })
+
+  it('respects limit parameter', async () => {
+    mockListAgents.mockResolvedValue({
+      agents: [
+        { agentId: 1n, name: 'Agent1', type: 'trading', owner: OWNER_ADDRESS },
+        { agentId: 2n, name: 'Agent2', type: 'trading', owner: OWNER_ADDRESS },
+        { agentId: 3n, name: 'Agent3', type: 'trading', owner: OWNER_ADDRESS },
+      ],
+    })
+
+    const result = await identityRead.list(config, { limit: 2 })
+
+    expect(result.agents).toHaveLength(2)
+    expect(result.total).toBe(2)
+  })
+
+  it('returns empty array when no agents exist', async () => {
+    mockListAgents.mockResolvedValue({ agents: [] })
 
     const result = await identityRead.list(config, {})
 
     expect(result.agents).toEqual([])
     expect(result.total).toBe(0)
+  })
+
+  it('over-fetches 3x when type filter is active', async () => {
+    mockListAgents.mockResolvedValue({ agents: [] })
+
+    await identityRead.list(config, { type: 'trading', limit: 5 })
+
+    expect(mockListAgents).toHaveBeenCalledWith({ limit: 15 })
   })
 })
 
@@ -347,11 +251,12 @@ describe('identityRead.reputation', () => {
     vi.clearAllMocks()
   })
 
-  it('returns normalized score and clients', async () => {
-    // 1. getClients returns address array, 2. getSummary returns [count, summaryValue, decimals]
-    mockReadContract
-      .mockResolvedValueOnce(['0x' + 'aa'.repeat(20), '0x' + 'bb'.repeat(20)])
-      .mockResolvedValueOnce([5n, 4500n, 2])
+  it('returns SDK reputation data with agentId as string', async () => {
+    mockGetReputation.mockResolvedValue({
+      score: 45,
+      count: 5,
+      clients: ['0x' + 'aa'.repeat(20), '0x' + 'bb'.repeat(20)],
+    })
 
     const result = await identityRead.reputation(config, { agentId: AGENT_ID })
 
@@ -361,10 +266,33 @@ describe('identityRead.reputation', () => {
       count: 5,
       clients: ['0x' + 'aa'.repeat(20), '0x' + 'bb'.repeat(20)],
     })
+    expect(mockGetReputation).toHaveBeenCalledWith(42n, {
+      clientAddresses: undefined,
+      tag1: undefined,
+      tag2: undefined,
+    })
   })
 
-  it('returns zeros for agent with no feedback (catch revert)', async () => {
-    mockReadContract.mockRejectedValue(new Error('execution reverted'))
+  it('passes filter params to SDK', async () => {
+    mockGetReputation.mockResolvedValue({ score: 100, count: 1, clients: [] })
+
+    const clientAddresses = ['0x' + 'cc'.repeat(20)]
+    await identityRead.reputation(config, {
+      agentId: AGENT_ID,
+      clientAddresses,
+      tag1: 'accuracy',
+      tag2: 'v2',
+    })
+
+    expect(mockGetReputation).toHaveBeenCalledWith(42n, {
+      clientAddresses,
+      tag1: 'accuracy',
+      tag2: 'v2',
+    })
+  })
+
+  it('returns zeros on error', async () => {
+    mockGetReputation.mockRejectedValue(new Error('execution reverted'))
 
     const result = await identityRead.reputation(config, { agentId: '999' })
 
@@ -375,28 +303,6 @@ describe('identityRead.reputation', () => {
       clients: [],
     })
   })
-
-  it('passes filter params correctly', async () => {
-    mockReadContract
-      .mockResolvedValueOnce(['0x' + 'cc'.repeat(20)])  // getClients
-      .mockResolvedValueOnce([1n, 100n, 0])              // getSummary
-
-    const clientAddresses = ['0x' + 'cc'.repeat(20)]
-    await identityRead.reputation(config, {
-      agentId: AGENT_ID,
-      clientAddresses,
-      tag1: 'accuracy',
-      tag2: 'v2',
-    })
-
-    // Verify getSummary call args
-    expect(mockReadContract).toHaveBeenCalledWith(
-      expect.objectContaining({
-        functionName: 'getSummary',
-        args: [42n, clientAddresses, 'accuracy', 'v2'],
-      }),
-    )
-  })
 })
 
 // ─── identityRead.feedbackList ─────────────────────────────────────────────
@@ -406,15 +312,24 @@ describe('identityRead.feedbackList', () => {
     vi.clearAllMocks()
   })
 
-  it('returns zipped entries from readAllFeedback arrays', async () => {
-    mockReadContract.mockResolvedValueOnce([
-      ['0x' + 'aa'.repeat(20), '0x' + 'bb'.repeat(20)],  // clients
-      [0n, 1n],                                             // feedbackIndices
-      [500n, 300n],                                         // values
-      [2, 1],                                               // valueDecimals
-      ['accuracy', 'speed'],                                // tag1s
-      ['v1', 'v2'],                                         // tag2s
-      [false, false],                                       // revokedArr
+  it('maps SDK entries (bigint values, tags tuple) to MCP entries', async () => {
+    mockGetFeedbackEntries.mockResolvedValue([
+      {
+        client: '0x' + 'aa'.repeat(20),
+        feedbackIndex: 0n,
+        value: 500n,
+        decimals: 2,
+        tags: ['accuracy', 'v1'],
+        revoked: false,
+      },
+      {
+        client: '0x' + 'bb'.repeat(20),
+        feedbackIndex: 1n,
+        value: 300n,
+        decimals: 1,
+        tags: ['speed', 'v2'],
+        revoked: false,
+      },
     ])
 
     const result = await identityRead.feedbackList(config, { agentId: AGENT_ID })
@@ -439,27 +354,47 @@ describe('identityRead.feedbackList', () => {
     })
   })
 
-  it('returns empty array on revert', async () => {
-    mockReadContract.mockRejectedValue(new Error('execution reverted'))
+  it('normalizes values by decimals', async () => {
+    mockGetFeedbackEntries.mockResolvedValue([
+      {
+        client: '0x' + 'aa'.repeat(20),
+        feedbackIndex: 0n,
+        value: 12345n,
+        decimals: 3,
+        tags: ['tag', ''],
+        revoked: false,
+      },
+    ])
+
+    const result = await identityRead.feedbackList(config, { agentId: AGENT_ID })
+
+    expect(result.entries[0]!.value).toBeCloseTo(12.345, 3)
+  })
+
+  it('returns empty entries on error', async () => {
+    mockGetFeedbackEntries.mockRejectedValue(new Error('execution reverted'))
 
     const result = await identityRead.feedbackList(config, { agentId: '999' })
 
     expect(result).toEqual({ agentId: '999', entries: [] })
   })
 
-  it('normalizes values by decimals', async () => {
-    mockReadContract.mockResolvedValueOnce([
-      ['0x' + 'aa'.repeat(20)],
-      [0n],
-      [12345n],
-      [3],
-      ['tag'],
-      [''],
-      [false],
-    ])
+  it('passes filter params to SDK', async () => {
+    mockGetFeedbackEntries.mockResolvedValue([])
 
-    const result = await identityRead.feedbackList(config, { agentId: AGENT_ID })
+    await identityRead.feedbackList(config, {
+      agentId: AGENT_ID,
+      clientAddresses: ['0x' + 'cc'.repeat(20)],
+      tag1: 'accuracy',
+      tag2: 'v2',
+      includeRevoked: true,
+    })
 
-    expect(result.entries[0]!.value).toBeCloseTo(12.345, 3)
+    expect(mockGetFeedbackEntries).toHaveBeenCalledWith(42n, {
+      clientAddresses: ['0x' + 'cc'.repeat(20)],
+      tag1: 'accuracy',
+      tag2: 'v2',
+      includeRevoked: true,
+    })
   })
 })

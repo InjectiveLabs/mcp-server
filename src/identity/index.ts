@@ -1,28 +1,19 @@
 /**
- * Identity module — register, update, and deregister agent identities
- * on the ERC-8004 IdentityRegistry contract via Injective EVM.
+ * Identity module — thin adapter over @injective/agent-sdk.
  *
- * Security: Private keys are decrypted, used to sign EVM transactions,
- * then discarded. The LLM/agent never sees the private key.
+ * Unlocks the keystore, creates an AgentClient per request, delegates
+ * all write operations to the SDK, and formats responses into the exact
+ * MCP JSON shapes that server.ts expects.
  */
 import type { Config } from '../config/index.js'
-import type { PublicClient, WalletClient, Account, Chain } from 'viem'
-import { keccak256, toHex } from 'viem'
-import type { ServiceEntry } from './types.js'
+import type { AgentType, ServiceType, ServiceEntry } from '@injective/agent-sdk'
+import { AgentClient, PinataStorage } from '@injective/agent-sdk'
 import { wallets } from '../wallets/index.js'
-import { createIdentityWalletClient, createIdentityPublicClient } from './client.js'
-import { getIdentityConfig, getPinataJwt, type IdentityConfig } from './config.js'
-import { IDENTITY_REGISTRY_ABI, REPUTATION_REGISTRY_ABI } from './abis.js'
-import { encodeStringMetadata, walletLinkDeadline, signWalletLink, METADATA_KEYS } from './helpers.js'
 import { IdentityTxFailed, DeregisterNotConfirmed } from '../errors/index.js'
-import { generateAgentCard, fetchAgentCard, mergeAgentCard } from './card.js'
-import { PinataStorage, StorageError } from './storage.js'
 
-const NEW_FEEDBACK_EVENT_TOPIC = keccak256(
-  toHex('NewFeedback(uint256,address,uint256,uint256,uint8,string,string)'),
-)
+export type { ServiceEntry } from '@injective/agent-sdk'
 
-// ─── Parameter / result types ───────────────────────────────────────────────
+// ─── Parameter / result types (consumed by server.ts) ─────────────────────
 
 export interface RegisterParams {
   address: string
@@ -115,90 +106,14 @@ export interface RevokeFeedbackResult {
   agentId: string
 }
 
-// ─── Helpers ────────────────────────────────────────────────────────────────
+// ─── Helpers ──────────────────────────────────────────────────────────────
 
-interface TxContext {
-  walletClient: WalletClient
-  publicClient: PublicClient
-  account: Account
-  chain: Chain
-  identityCfg: IdentityConfig
-}
-
-async function withIdentityTx<T>(
-  config: Config,
-  address: string,
-  password: string,
-  fn: (ctx: TxContext) => Promise<T>,
-): Promise<T> {
-  try {
-    const privateKeyHex = wallets.unlock(address, password)
-    const walletClient = createIdentityWalletClient(config.network, privateKeyHex)
-    const publicClient = createIdentityPublicClient(config.network)
-    const identityCfg = getIdentityConfig(config.network)
-    const account = walletClient.account
-    if (!account) throw new IdentityTxFailed('Wallet client has no account')
-
-    return await fn({
-      walletClient,
-      publicClient,
-      account,
-      chain: walletClient.chain!,
-      identityCfg,
-    })
-  } catch (err) {
-    if (err instanceof IdentityTxFailed || err instanceof StorageError) throw err
-    const message = err instanceof Error ? err.message : String(err)
-    throw new IdentityTxFailed(message)
-  }
-}
-
-interface WalletLinkResult {
-  walletTxHash?: string
-  walletLinkSkipped?: boolean
-  walletLinkReason?: string
-}
-
-async function linkWalletIfSelf(
-  ctx: TxContext,
-  agentId: bigint,
-  wallet: string | undefined,
-): Promise<WalletLinkResult> {
-  if (!wallet) return {}
-
-  if (wallet.toLowerCase() !== ctx.account.address.toLowerCase()) {
-    return {
-      walletLinkSkipped: true,
-      walletLinkReason: 'Wallet differs from signer. Link manually with the wallet\'s private key.',
-    }
-  }
-
-  const deadline = walletLinkDeadline()
-  const signature = await signWalletLink({
-    account: ctx.account,
-    agentId,
-    newWallet: wallet as `0x${string}`,
-    ownerAddress: ctx.account.address,
-    deadline,
-    chainId: ctx.identityCfg.chainId,
-    verifyingContract: ctx.identityCfg.identityRegistry,
-  })
-
-  const walletTxHash = await ctx.walletClient.writeContract({
-    chain: ctx.chain,
-    account: ctx.account,
-    address: ctx.identityCfg.identityRegistry,
-    abi: IDENTITY_REGISTRY_ABI,
-    functionName: 'setAgentWallet',
-    args: [agentId, wallet as `0x${string}`, deadline, signature],
-  })
-  await ctx.publicClient.waitForTransactionReceipt({ hash: walletTxHash })
-
-  return { walletTxHash }
+function normalizeKey(hex: string): `0x${string}` {
+  return (hex.startsWith('0x') ? hex : `0x${hex}`) as `0x${string}`
 }
 
 function requirePinataJwt(): string {
-  const jwt = getPinataJwt()
+  const jwt = process.env['PINATA_JWT']
   if (!jwt) {
     throw new IdentityTxFailed(
       'IPFS storage not configured. Set PINATA_JWT environment variable or provide a uri parameter.',
@@ -207,262 +122,159 @@ function requirePinataJwt(): string {
   return jwt
 }
 
-// ─── Handlers ───────────────────────────────────────────────────────────────
+function createClient(config: Config, address: string, password: string, storage?: PinataStorage): AgentClient {
+  const hex = wallets.unlock(address, password)
+  return new AgentClient({
+    privateKey: normalizeKey(hex),
+    network: config.network,
+    storage,
+    audit: false,
+  })
+}
+
+interface WalletLinkInfo {
+  walletTxHash?: string
+  walletLinkSkipped?: boolean
+  walletLinkReason?: string
+}
+
+function walletLinkInfo(wallet: string | undefined, signerAddress: string, txHashes: `0x${string}`[]): WalletLinkInfo {
+  if (!wallet) return {}
+  if (wallet.toLowerCase() !== signerAddress.toLowerCase()) {
+    return {
+      walletLinkSkipped: true,
+      walletLinkReason: `Wallet ${wallet} does not match signer ${signerAddress} — only self-links supported`,
+    }
+  }
+  if (txHashes.length > 1) {
+    return { walletTxHash: txHashes[1] }
+  }
+  return {}
+}
+
+// ─── Handlers ─────────────────────────────────────────────────────────────
 
 export const identity = {
   async register(config: Config, params: RegisterParams): Promise<RegisterResult> {
-    // Fail fast: validate JWT before decrypting the key
     const jwt = !params.uri ? requirePinataJwt() : undefined
-    let cardUri = params.uri ?? ''
+    const storage = jwt ? new PinataStorage({ jwt }) : undefined
 
-    return withIdentityTx(config, params.address, params.password, async (ctx) => {
-      if (jwt) {
-        const card = generateAgentCard({
-          name: params.name,
-          agentType: params.type,
-          builderCode: params.builderCode,
-          operatorAddress: ctx.account.address,
-          chainId: ctx.identityCfg.chainId,
-          description: params.description,
-          image: params.image,
-          services: params.services,
-        })
-        const storage = new PinataStorage(jwt)
-        cardUri = await storage.uploadJSON(card, `agent-card-${params.name}`)
-      }
-
-      const metadata = [
-        { metadataKey: METADATA_KEYS.NAME, metadataValue: encodeStringMetadata(params.name) },
-        { metadataKey: METADATA_KEYS.AGENT_TYPE, metadataValue: encodeStringMetadata(params.type) },
-        { metadataKey: METADATA_KEYS.BUILDER_CODE, metadataValue: encodeStringMetadata(params.builderCode) },
-      ]
-
-      const txHash = await ctx.walletClient.writeContract({
-        chain: ctx.chain,
-        account: ctx.account,
-        address: ctx.identityCfg.identityRegistry,
-        abi: IDENTITY_REGISTRY_ABI,
-        functionName: 'register',
-        args: [cardUri, metadata],
+    try {
+      const client = createClient(config, params.address, params.password, storage)
+      const r = await client.register({
+        name: params.name,
+        type: params.type as AgentType,
+        builderCode: params.builderCode,
+        wallet: (params.wallet ?? client.address) as `0x${string}`,
+        uri: params.uri,
+        description: params.description,
+        image: params.image,
+        services: params.services,
       })
 
-      const receipt = await ctx.publicClient.waitForTransactionReceipt({ hash: txHash })
-
-      // Extract agentId from Registered event: topics = [sig, agentId(indexed), owner(indexed)]
-      // Must match exactly 3 topics to avoid confusing with Transfer (4 topics)
-      let agentId = '0'
-      const registryAddr = ctx.identityCfg.identityRegistry.toLowerCase()
-      for (const log of receipt.logs) {
-        if (
-          log.address?.toLowerCase() === registryAddr &&
-          log.topics.length === 3 &&
-          log.topics[1]
-        ) {
-          agentId = BigInt(log.topics[1]).toString()
-          break
-        }
-      }
-
-      const walletResult = await linkWalletIfSelf(ctx, BigInt(agentId), params.wallet)
-
       return {
-        agentId,
-        txHash,
-        owner: ctx.account.address,
-        evmAddress: ctx.account.address,
-        cardUri,
-        ...walletResult,
+        agentId: r.agentId.toString(),
+        txHash: r.txHashes[0]!,
+        owner: client.address,
+        evmAddress: client.address,
+        cardUri: r.cardUri,
+        ...walletLinkInfo(params.wallet, client.address, r.txHashes),
       }
-    })
+    } catch (err) {
+      if (err instanceof IdentityTxFailed) throw err
+      throw new IdentityTxFailed(err instanceof Error ? err.message : String(err))
+    }
   },
 
   async update(config: Config, params: UpdateParams): Promise<UpdateResult> {
     const hasCardUpdate = params.description !== undefined || params.image !== undefined
       || params.services !== undefined || (params.removeServices?.length ?? 0) > 0
-
-    if ([params.name, params.type, params.builderCode, params.uri, params.wallet,
-         params.description, params.image, params.services].every(v => v === undefined)
-        && !(params.removeServices?.length)) {
-      throw new IdentityTxFailed('No fields provided to update')
-    }
-
-    // Fail fast: validate JWT before decrypting the key
     const jwt = (hasCardUpdate && !params.uri) ? requirePinataJwt() : undefined
+    const storage = jwt ? new PinataStorage({ jwt }) : undefined
 
-    return withIdentityTx(config, params.address, params.password, async (ctx) => {
+    try {
+      const client = createClient(config, params.address, params.password, storage)
       const id = BigInt(params.agentId)
-      const registry = ctx.identityCfg.identityRegistry
-      const result: UpdateResult = { agentId: params.agentId, txHashes: [] }
+      const r = await client.update(id, {
+        name: params.name,
+        type: params.type as AgentType | undefined,
+        builderCode: params.builderCode,
+        wallet: params.wallet as `0x${string}` | undefined,
+        uri: params.uri,
+        description: params.description,
+        image: params.image,
+        services: params.services,
+        removeServices: params.removeServices as ServiceType[] | undefined,
+      })
 
-      // Phase 1: send all metadata + URI txs sequentially (nonce ordering)
-      const pendingHashes: `0x${string}`[] = []
-
-      for (const [key, value] of [
-        [METADATA_KEYS.NAME, params.name],
-        [METADATA_KEYS.AGENT_TYPE, params.type],
-        [METADATA_KEYS.BUILDER_CODE, params.builderCode],
-      ] as const) {
-        if (value !== undefined) {
-          const txHash = await ctx.walletClient.writeContract({
-            chain: ctx.chain, account: ctx.account,
-            address: registry, abi: IDENTITY_REGISTRY_ABI,
-            functionName: 'setMetadata',
-            args: [id, key, encodeStringMetadata(value)],
-          })
-          pendingHashes.push(txHash)
-        }
+      let cardUri: string | undefined
+      if (hasCardUpdate || params.uri !== undefined) {
+        const status = await client.getStatus(id)
+        cardUri = status.tokenUri
       }
 
-      if (params.uri !== undefined && !hasCardUpdate) {
-        const txHash = await ctx.walletClient.writeContract({
-          chain: ctx.chain, account: ctx.account,
-          address: registry, abi: IDENTITY_REGISTRY_ABI,
-          functionName: 'setAgentURI',
-          args: [id, params.uri],
-        })
-        pendingHashes.push(txHash)
-      }
-
-      // Card update: fetch existing card, merge, re-upload
-      if (jwt) {
-        // Fetch existing card
-        const tokenURI = await ctx.publicClient.readContract({
-          address: ctx.identityCfg.identityRegistry,
-          abi: IDENTITY_REGISTRY_ABI,
-          functionName: 'tokenURI',
-          args: [id],
-        }) as string
-
-        let card: import('./types.js').AgentCard | null = null
-        try {
-          card = await fetchAgentCard(tokenURI, ctx.identityCfg.ipfsGateway)
-        } catch {
-          // Gateway unreachable — build fresh card rather than failing the update
-        }
-
-        if (card) {
-          card = mergeAgentCard(card, {
-            name: params.name,
-            description: params.description,
-            image: params.image,
-            services: params.services,
-            removeServices: params.removeServices,
-          })
-        } else {
-          card = generateAgentCard({
-            name: params.name ?? '',
-            agentType: params.type ?? '',
-            builderCode: params.builderCode ?? '',
-            operatorAddress: ctx.account.address,
-            chainId: ctx.identityCfg.chainId,
-            description: params.description,
-            image: params.image,
-            services: params.services,
-          })
-        }
-
-        const storage = new PinataStorage(jwt)
-        const newUri = await storage.uploadJSON(card, `agent-card-update-${params.agentId}`)
-
-        const txHash = await ctx.walletClient.writeContract({
-          chain: ctx.chain, account: ctx.account,
-          address: registry, abi: IDENTITY_REGISTRY_ABI,
-          functionName: 'setAgentURI',
-          args: [id, newUri],
-        })
-        pendingHashes.push(txHash)
-        result.cardUri = newUri
-      }
-
-      // Phase 2: wait for all receipts in parallel
-      await Promise.all(pendingHashes.map(h => ctx.publicClient.waitForTransactionReceipt({ hash: h })))
-
-      const walletResult = await linkWalletIfSelf(ctx, id, params.wallet)
-
-      result.txHashes = pendingHashes
       return {
-        ...result,
-        ...walletResult,
+        agentId: params.agentId,
+        txHashes: r.txHashes,
+        cardUri,
+        ...walletLinkInfo(params.wallet, client.address, r.txHashes),
       }
-    })
+    } catch (err) {
+      if (err instanceof IdentityTxFailed) throw err
+      throw new IdentityTxFailed(err instanceof Error ? err.message : String(err))
+    }
   },
 
   async deregister(config: Config, params: DeregisterParams): Promise<DeregisterResult> {
-    if (!params.confirm) {
-      throw new DeregisterNotConfirmed()
+    if (!params.confirm) throw new DeregisterNotConfirmed()
+
+    try {
+      const client = createClient(config, params.address, params.password)
+      const r = await client.deregister(BigInt(params.agentId))
+      return { agentId: params.agentId, txHash: r.txHash }
+    } catch (err) {
+      if (err instanceof IdentityTxFailed || err instanceof DeregisterNotConfirmed) throw err
+      throw new IdentityTxFailed(err instanceof Error ? err.message : String(err))
     }
-
-    return withIdentityTx(config, params.address, params.password, async (ctx) => {
-      const txHash = await ctx.walletClient.writeContract({
-        chain: ctx.chain,
-        account: ctx.account,
-        address: ctx.identityCfg.identityRegistry,
-        abi: IDENTITY_REGISTRY_ABI,
-        functionName: 'deregister',
-        args: [BigInt(params.agentId)],
-      })
-
-      await ctx.publicClient.waitForTransactionReceipt({ hash: txHash })
-      return { agentId: params.agentId, txHash }
-    })
   },
 
   async giveFeedback(config: Config, params: GiveFeedbackParams): Promise<GiveFeedbackResult> {
-    return withIdentityTx(config, params.address, params.password, async (ctx) => {
-      const feedbackHash = (params.feedbackHash ?? '0x' + '00'.repeat(32)) as `0x${string}`
-
-      const txHash = await ctx.walletClient.writeContract({
-        chain: ctx.chain,
-        account: ctx.account,
-        address: ctx.identityCfg.reputationRegistry,
-        abi: REPUTATION_REGISTRY_ABI,
-        functionName: 'giveFeedback',
-        args: [
-          BigInt(params.agentId),
-          BigInt(params.value),
-          params.valueDecimals ?? 0,
-          params.tag1 ?? '',
-          params.tag2 ?? '',
-          params.endpoint ?? '',
-          params.feedbackURI ?? '',
-          feedbackHash,
-        ],
+    try {
+      const client = createClient(config, params.address, params.password)
+      const r = await client.giveFeedback({
+        agentId: BigInt(params.agentId),
+        value: BigInt(params.value),
+        valueDecimals: params.valueDecimals,
+        tag1: params.tag1,
+        tag2: params.tag2,
+        endpoint: params.endpoint,
+        feedbackURI: params.feedbackURI,
+        feedbackHash: params.feedbackHash as `0x${string}` | undefined,
       })
 
-      const receipt = await ctx.publicClient.waitForTransactionReceipt({ hash: txHash })
-
-      // Extract feedbackIndex from NewFeedback event data (first 32-byte word)
-      let feedbackIndex: string | undefined
-      const registryAddr = ctx.identityCfg.reputationRegistry.toLowerCase()
-      for (const log of receipt.logs) {
-        if (
-          log.address?.toLowerCase() === registryAddr &&
-          log.topics?.[0] === NEW_FEEDBACK_EVENT_TOPIC &&
-          log.data &&
-          log.data.length >= 66
-        ) {
-          feedbackIndex = BigInt(log.data.slice(0, 66)).toString()
-          break
-        }
+      return {
+        txHash: r.txHash,
+        agentId: params.agentId,
+        feedbackIndex: r.feedbackIndex.toString(),
       }
-
-      return { txHash, agentId: params.agentId, feedbackIndex }
-    })
+    } catch (err) {
+      if (err instanceof IdentityTxFailed) throw err
+      throw new IdentityTxFailed(err instanceof Error ? err.message : String(err))
+    }
   },
 
   async revokeFeedback(config: Config, params: RevokeFeedbackParams): Promise<RevokeFeedbackResult> {
-    return withIdentityTx(config, params.address, params.password, async (ctx) => {
-      const txHash = await ctx.walletClient.writeContract({
-        chain: ctx.chain,
-        account: ctx.account,
-        address: ctx.identityCfg.reputationRegistry,
-        abi: REPUTATION_REGISTRY_ABI,
-        functionName: 'revokeFeedback',
-        args: [BigInt(params.agentId), BigInt(params.feedbackIndex)],
+    try {
+      const client = createClient(config, params.address, params.password)
+      const r = await client.revokeFeedback({
+        agentId: BigInt(params.agentId),
+        feedbackIndex: BigInt(params.feedbackIndex),
       })
 
-      await ctx.publicClient.waitForTransactionReceipt({ hash: txHash })
-      return { txHash, agentId: params.agentId }
-    })
+      return { txHash: r.txHash, agentId: params.agentId }
+    } catch (err) {
+      if (err instanceof IdentityTxFailed) throw err
+      throw new IdentityTxFailed(err instanceof Error ? err.message : String(err))
+    }
   },
 }

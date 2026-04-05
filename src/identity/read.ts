@@ -1,191 +1,76 @@
 /**
- * Identity read handlers — query agent status and list registered agents
- * from the ERC-8004 IdentityRegistry contract via Injective EVM (read-only).
+ * Identity read handlers — thin adapter over @injective/agent-sdk.
+ *
+ * Delegates all reads to AgentReadClient and maps SDK types to the MCP JSON
+ * shapes that server.ts expects.
  */
-import type { Hex } from 'viem'
-import { zeroAddress } from 'viem'
-import { evm } from '../evm/index.js'
+import { AgentReadClient } from '@injective/agent-sdk'
 import type { Config } from '../config/index.js'
-import { createIdentityPublicClient } from './client.js'
-import { getIdentityConfig } from './config.js'
-import { IDENTITY_REGISTRY_ABI, REPUTATION_REGISTRY_ABI } from './abis.js'
-import { IdentityNotFound, IdentityTxFailed } from '../errors/index.js'
-import { decodeStringMetadata, METADATA_KEYS } from './helpers.js'
+import { evm } from '../evm/index.js'
+import { IdentityNotFound } from '../errors/index.js'
 
-// ─── Parameter / result types ───────────────────────────────────────────────
+// ─── Parameter / result types (consumed by server.ts) ─────────────────────
 
-export interface StatusParams {
-  agentId: string
-}
-
+export interface StatusParams { agentId: string }
 export interface StatusResult {
-  agentId: string
-  name: string
-  agentType: string
-  builderCode: string
-  owner: string
-  tokenURI: string
-  linkedWallet: string
-  reputation: {
-    score: string
-    count: string
-  }
+  agentId: string; name: string; agentType: string; builderCode: string;
+  owner: string; tokenURI: string; linkedWallet: string;
+  reputation: { score: string; count: string }
 }
 
-export interface ListParams {
-  owner?: string
-  type?: string
-  limit?: number
-}
-
-export interface ListEntry {
-  agentId: string
-  name: string
-  agentType: string
-  owner: string
-}
-
-export interface ListResult {
-  agents: ListEntry[]
-  total: number
-}
+export interface ListParams { owner?: string; type?: string; limit?: number }
+export interface ListEntry { agentId: string; name: string; agentType: string; owner: string }
+export interface ListResult { agents: ListEntry[]; total: number }
 
 export interface ReputationParams {
-  agentId: string
-  clientAddresses?: string[]
-  tag1?: string
-  tag2?: string
+  agentId: string; clientAddresses?: string[]; tag1?: string; tag2?: string
 }
-
-export interface ReputationResult {
-  agentId: string
-  score: number
-  count: number
-  clients: string[]
-}
+export interface ReputationResult { agentId: string; score: number; count: number; clients: string[] }
 
 export interface FeedbackListParams {
-  agentId: string
-  clientAddresses?: string[]
-  tag1?: string
-  tag2?: string
-  includeRevoked?: boolean
+  agentId: string; clientAddresses?: string[]; tag1?: string; tag2?: string; includeRevoked?: boolean
 }
-
 export interface FeedbackEntry {
-  client: string
-  feedbackIndex: number
-  value: number
-  tag1: string
-  tag2: string
-  revoked: boolean
+  client: string; feedbackIndex: number; value: number; tag1: string; tag2: string; revoked: boolean
+}
+export interface FeedbackListResult { agentId: string; entries: FeedbackEntry[] }
+
+// ─── Client cache (one per network, no private key needed) ────────────────
+
+const clientCache = new Map<string, AgentReadClient>()
+function getClient(network: string): AgentReadClient {
+  let client = clientCache.get(network)
+  if (!client) {
+    client = new AgentReadClient({ network: network as 'testnet' | 'mainnet' })
+    clientCache.set(network, client)
+  }
+  return client
 }
 
-export interface FeedbackListResult {
-  agentId: string
-  entries: FeedbackEntry[]
-}
-
-// ─── Handlers ───────────────────────────────────────────────────────────────
+// ─── Handlers ─────────────────────────────────────────────────────────────
 
 export const identityRead = {
   async status(config: Config, params: StatusParams): Promise<StatusResult> {
-    const identityCfg = getIdentityConfig(config.network)
-    const publicClient = createIdentityPublicClient(config.network)
-    const tokenId = BigInt(params.agentId)
-
+    const sdk = getClient(config.network)
+    const agentId = BigInt(params.agentId)
     try {
-      const [nameRaw, builderCodeRaw, agentTypeRaw, owner, tokenURI, linkedWallet] = await Promise.all([
-        publicClient.readContract({
-          address: identityCfg.identityRegistry,
-          abi: IDENTITY_REGISTRY_ABI,
-          functionName: 'getMetadata',
-          args: [tokenId, METADATA_KEYS.NAME],
-        }) as Promise<Hex>,
-        publicClient.readContract({
-          address: identityCfg.identityRegistry,
-          abi: IDENTITY_REGISTRY_ABI,
-          functionName: 'getMetadata',
-          args: [tokenId, METADATA_KEYS.BUILDER_CODE],
-        }) as Promise<Hex>,
-        publicClient.readContract({
-          address: identityCfg.identityRegistry,
-          abi: IDENTITY_REGISTRY_ABI,
-          functionName: 'getMetadata',
-          args: [tokenId, METADATA_KEYS.AGENT_TYPE],
-        }) as Promise<Hex>,
-        publicClient.readContract({
-          address: identityCfg.identityRegistry,
-          abi: IDENTITY_REGISTRY_ABI,
-          functionName: 'ownerOf',
-          args: [tokenId],
-        }) as Promise<string>,
-        publicClient.readContract({
-          address: identityCfg.identityRegistry,
-          abi: IDENTITY_REGISTRY_ABI,
-          functionName: 'tokenURI',
-          args: [tokenId],
-        }) as Promise<string>,
-        publicClient.readContract({
-          address: identityCfg.identityRegistry,
-          abi: IDENTITY_REGISTRY_ABI,
-          functionName: 'getAgentWallet',
-          args: [tokenId],
-        }) as Promise<string>,
-      ])
-
-      const name = decodeStringMetadata(nameRaw)
-      const builderCode = decodeStringMetadata(builderCodeRaw)
-      const agentType = decodeStringMetadata(agentTypeRaw)
-
-      // Reputation: getSummary requires client addresses, so fetch clients first
-      let reputationScore = '0'
-      let reputationCount = '0'
-      try {
-        const clients = await publicClient.readContract({
-          address: identityCfg.reputationRegistry,
-          abi: REPUTATION_REGISTRY_ABI,
-          functionName: 'getClients',
-          args: [tokenId],
-        }) as `0x${string}`[]
-
-        if (clients.length > 0) {
-          const [count, summaryValue, decimals] = await publicClient.readContract({
-            address: identityCfg.reputationRegistry,
-            abi: REPUTATION_REGISTRY_ABI,
-            functionName: 'getSummary',
-            args: [tokenId, clients, '', ''],
-          }) as [bigint, bigint, number]
-
-          reputationCount = Number(count).toString()
-          reputationScore = summaryValue !== 0n
-            ? (Number(summaryValue) / Math.pow(10, Number(decimals))).toString()
-            : '0'
-        }
-      } catch {
-        // No reputation data — leave as zeros
-      }
-
+      const enriched = await sdk.getEnrichedAgent(agentId)
       return {
-        agentId: params.agentId,
-        name,
-        agentType,
-        builderCode,
-        owner,
-        tokenURI,
-        linkedWallet,
+        agentId: enriched.agentId.toString(),
+        name: enriched.name,
+        agentType: enriched.type,
+        builderCode: enriched.builderCode,
+        owner: enriched.owner,
+        tokenURI: enriched.tokenUri,
+        linkedWallet: enriched.wallet,
         reputation: {
-          score: reputationScore,
-          count: reputationCount,
+          score: String(enriched.reputation.score),
+          count: String(enriched.reputation.count),
         },
       }
     } catch (err) {
-      const message = err instanceof Error ? err.message : String(err)
-      if (
-        message.includes('ERC721') ||
-        message.includes('nonexistent') ||
-        message.includes('invalid token')
-      ) {
+      const msg = err instanceof Error ? err.message : String(err)
+      if (msg.includes('ERC721') || msg.includes('nonexistent') || msg.includes('invalid token')) {
         throw new IdentityNotFound(params.agentId)
       }
       throw err
@@ -193,141 +78,52 @@ export const identityRead = {
   },
 
   async list(config: Config, params: ListParams): Promise<ListResult> {
-    const identityCfg = getIdentityConfig(config.network)
-    const publicClient = createIdentityPublicClient(config.network)
+    const sdk = getClient(config.network)
     const limit = params.limit ?? 20
 
-    let ownerFilter: string | undefined
+    // Owner filter: convert inj1... to 0x...
+    let ownerHex: `0x${string}` | undefined
     if (params.owner) {
-      ownerFilter = (params.owner.startsWith('inj1')
+      ownerHex = (params.owner.startsWith('inj')
         ? evm.injAddressToEth(params.owner)
-        : params.owner
-      ).toLowerCase()
+        : params.owner) as `0x${string}`
     }
 
-    try {
-      const logs = await publicClient.getLogs({
-        address: identityCfg.identityRegistry,
-        event: {
-          name: 'Transfer',
-          type: 'event',
-          inputs: [
-            { name: 'from', type: 'address', indexed: true },
-            { name: 'to', type: 'address', indexed: true },
-            { name: 'tokenId', type: 'uint256', indexed: true },
-          ],
-        },
-        args: { from: zeroAddress },
-        fromBlock: identityCfg.deployBlock,
-        toBlock: 'latest',
-      })
+    // SDK doesn't filter by type — over-fetch 3x, filter in adapter
+    const fetchLimit = params.type ? limit * 3 : limit
 
-      // NOTE: Owner filter uses the mint recipient. If an agent NFT was
-      // transferred after minting, the new owner won't appear in mint events.
-      // Acceptable for V1 since agent transfers are rare.
-      const filtered = ownerFilter
-        ? logs.filter((log) => log.args.to?.toLowerCase() === ownerFilter)
-        : logs
+    const result = ownerHex
+      ? await sdk.getAgentsByOwner(ownerHex, { limit: fetchLimit })
+      : await sdk.listAgents({ limit: fetchLimit })
 
-      // Over-fetch candidates to account for type filter + burned agents.
-      // We fetch up to 3x the limit, then apply type filter, then cap.
-      const overFetchLimit = params.type !== undefined ? limit * 3 : limit
-      const candidateIds = filtered
-        .slice(0, overFetchLimit)
-        .map((log) => log.args.tokenId!)
+    let agents: ListEntry[] = result.agents.map((a) => ({
+      agentId: a.agentId.toString(),
+      name: a.name,
+      agentType: a.type,
+      owner: a.owner,
+    }))
 
-      // Fetch metadata for all candidates in parallel
-      const results = await Promise.allSettled(
-        candidateIds.map(async (tokenId) => {
-          const [nameRaw, agentTypeRaw, currentOwner] = await Promise.all([
-            publicClient.readContract({
-              address: identityCfg.identityRegistry,
-              abi: IDENTITY_REGISTRY_ABI,
-              functionName: 'getMetadata',
-              args: [tokenId, METADATA_KEYS.NAME],
-            }) as Promise<Hex>,
-            publicClient.readContract({
-              address: identityCfg.identityRegistry,
-              abi: IDENTITY_REGISTRY_ABI,
-              functionName: 'getMetadata',
-              args: [tokenId, METADATA_KEYS.AGENT_TYPE],
-            }) as Promise<Hex>,
-            publicClient.readContract({
-              address: identityCfg.identityRegistry,
-              abi: IDENTITY_REGISTRY_ABI,
-              functionName: 'ownerOf',
-              args: [tokenId],
-            }) as Promise<string>,
-          ])
-          const name = decodeStringMetadata(nameRaw)
-          const agentType = decodeStringMetadata(agentTypeRaw)
-          return { tokenId, name, agentType, currentOwner }
-        }),
-      )
-
-      const agents: ListEntry[] = []
-      for (const result of results) {
-        if (result.status !== 'fulfilled') continue // burned agents
-        const { tokenId, name, agentType, currentOwner } = result.value
-
-        if (params.type !== undefined && agentType !== params.type) continue
-
-        agents.push({
-          agentId: tokenId.toString(),
-          name,
-          agentType,
-          owner: currentOwner,
-        })
-
-        if (agents.length >= limit) break
-      }
-
-      return { agents, total: agents.length }
-    } catch (err) {
-      if (err instanceof IdentityTxFailed) throw err
-      const message = err instanceof Error ? err.message : String(err)
-      throw new IdentityTxFailed(`Failed to list agents: ${message}`)
+    if (params.type) {
+      agents = agents.filter((a) => a.agentType === params.type)
     }
+
+    agents = agents.slice(0, limit)
+    return { agents, total: agents.length }
   },
 
   async reputation(config: Config, params: ReputationParams): Promise<ReputationResult> {
-    const identityCfg = getIdentityConfig(config.network)
-    const publicClient = createIdentityPublicClient(config.network)
-    const tokenId = BigInt(params.agentId)
-
+    const sdk = getClient(config.network)
     try {
-      // getSummary requires client addresses — fetch them first if not provided
-      const clients = await publicClient.readContract({
-        address: identityCfg.reputationRegistry,
-        abi: REPUTATION_REGISTRY_ABI,
-        functionName: 'getClients',
-        args: [tokenId],
-      }) as `0x${string}`[]
-
-      if (clients.length === 0) {
-        return { agentId: params.agentId, score: 0, count: 0, clients: [] }
-      }
-
-      const summaryClients = params.clientAddresses?.length
-        ? params.clientAddresses as `0x${string}`[]
-        : clients
-
-      const [count, summaryValue, summaryValueDecimals] = await publicClient.readContract({
-        address: identityCfg.reputationRegistry,
-        abi: REPUTATION_REGISTRY_ABI,
-        functionName: 'getSummary',
-        args: [tokenId, summaryClients, params.tag1 ?? '', params.tag2 ?? ''],
-      }) as [bigint, bigint, number]
-
-      const score = Number(count) > 0
-        ? Number(summaryValue) / Math.pow(10, Number(summaryValueDecimals))
-        : 0
-
+      const rep = await sdk.getReputation(BigInt(params.agentId), {
+        clientAddresses: params.clientAddresses as `0x${string}`[] | undefined,
+        tag1: params.tag1,
+        tag2: params.tag2,
+      })
       return {
         agentId: params.agentId,
-        score,
-        count: Number(count),
-        clients: clients as string[],
+        score: rep.score,
+        count: rep.count,
+        clients: rep.clients as string[],
       }
     } catch {
       return { agentId: params.agentId, score: 0, count: 0, clients: [] }
@@ -335,36 +131,25 @@ export const identityRead = {
   },
 
   async feedbackList(config: Config, params: FeedbackListParams): Promise<FeedbackListResult> {
-    const identityCfg = getIdentityConfig(config.network)
-    const publicClient = createIdentityPublicClient(config.network)
-    const tokenId = BigInt(params.agentId)
-
+    const sdk = getClient(config.network)
     try {
-      const result = await publicClient.readContract({
-        address: identityCfg.reputationRegistry,
-        abi: REPUTATION_REGISTRY_ABI,
-        functionName: 'readAllFeedback',
-        args: [
-          tokenId,
-          (params.clientAddresses ?? []) as `0x${string}`[],
-          params.tag1 ?? '',
-          params.tag2 ?? '',
-          params.includeRevoked ?? false,
-        ],
-      }) as [string[], bigint[], bigint[], number[], string[], string[], boolean[]]
-
-      const [clients, feedbackIndices, values, valueDecimals, tag1s, tag2s, revokedArr] = result
-
-      const entries: FeedbackEntry[] = clients.map((client, i) => ({
-        client,
-        feedbackIndex: Number(feedbackIndices[i]!),
-        value: Number(values[i]!) / Math.pow(10, Number(valueDecimals[i]!)),
-        tag1: tag1s[i]!,
-        tag2: tag2s[i]!,
-        revoked: revokedArr[i]!,
-      }))
-
-      return { agentId: params.agentId, entries }
+      const entries = await sdk.getFeedbackEntries(BigInt(params.agentId), {
+        clientAddresses: params.clientAddresses as `0x${string}`[] | undefined,
+        tag1: params.tag1,
+        tag2: params.tag2,
+        includeRevoked: params.includeRevoked,
+      })
+      return {
+        agentId: params.agentId,
+        entries: entries.map((e) => ({
+          client: e.client,
+          feedbackIndex: Number(e.feedbackIndex),
+          value: Number(e.value) / Math.pow(10, e.decimals),
+          tag1: e.tags[0],
+          tag2: e.tags[1],
+          revoked: e.revoked,
+        })),
+      }
     } catch {
       return { agentId: params.agentId, entries: [] }
     }
