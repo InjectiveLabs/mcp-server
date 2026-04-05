@@ -18,6 +18,7 @@
 import { describe, it, expect, beforeAll } from 'vitest'
 import { testConfig } from '../test-utils/index.js'
 import { wallets } from '../wallets/index.js'
+import { evm } from '../evm/index.js'
 import { identity } from './index.js'
 import { identityRead } from './read.js'
 
@@ -37,27 +38,27 @@ const SKIP_REASON = (() => {
 describe.skipIf(SKIP_REASON)('Identity Integration Tests (Testnet)', () => {
   const config = testConfig()
   let agentId: string
+  let evmAddress: string  // EVM equivalent of TEST_ADDRESS, derived in beforeAll
 
   beforeAll(async () => {
-    // Verify wallet exists and is unlockable
     console.log(`\n🔐 Verifying wallet at ${TEST_ADDRESS}...`)
-    const privateKey = wallets.unlock(TEST_ADDRESS!, TEST_PASSWORD!)
-    expect(privateKey).toBeDefined()
-    expect(privateKey.length).toBeGreaterThan(0)
+    wallets.unlock(TEST_ADDRESS!, TEST_PASSWORD!)
+    evmAddress = evm.injAddressToEth(TEST_ADDRESS!)
     console.log('✅ Wallet unlocked successfully\n')
   })
 
   it('registers agent on testnet with full metadata', async () => {
     console.log('📝 Registering agent on testnet...')
+    const ts = Date.now()
 
     const result = await identity.register(config, {
       address: TEST_ADDRESS!,
       password: TEST_PASSWORD!,
-      name: 'E2E Test Agent ' + Date.now(),
+      name: 'E2E Test Agent ' + ts,
       type: 'trading',
-      builderCode: 'e2e-test-' + Date.now(),
+      builderCode: 'e2e-test-' + ts,
       description: 'Full end-to-end test agent with metadata, image, and services',
-      image: 'https://picsum.photos/256?random=' + Date.now(),
+      image: 'https://picsum.photos/256?random=' + ts,
       services: [
         {
           name: 'trading',
@@ -80,13 +81,12 @@ describe.skipIf(SKIP_REASON)('Identity Integration Tests (Testnet)', () => {
 
     agentId = result.agentId
 
-    // Verify response shape
     expect(result.agentId).toBeDefined()
     expect(result.txHash).toBeDefined()
     expect(result.cardUri).toBeDefined()
     expect(result.owner).toBe(result.evmAddress)
     expect(result.owner).toMatch(/^0x[a-fA-F0-9]{40}$/)
-  }, 120000) // 2 min timeout for testnet
+  }, 120000)
 
   it('fetches registered agent status with metadata', async () => {
     console.log('📊 Fetching agent status from testnet...')
@@ -96,11 +96,9 @@ describe.skipIf(SKIP_REASON)('Identity Integration Tests (Testnet)', () => {
     console.log('✅ Status fetched!')
     console.log(`   • Name: ${result.name}`)
     console.log(`   • Type: ${result.agentType}`)
-    console.log(`   • Builder Code: ${result.builderCode}`)
     console.log(`   • Token URI: ${result.tokenURI}`)
     console.log(`   • Reputation: ${result.reputation.score}/${result.reputation.count}\n`)
 
-    // Verify response shape and that agent is on-chain
     expect(result.agentId).toBe(agentId)
     expect(result.name).toBeDefined()
     expect(result.agentType).toBe('trading')
@@ -123,12 +121,9 @@ describe.skipIf(SKIP_REASON)('Identity Integration Tests (Testnet)', () => {
 
     console.log(`✅ Found ${result.agents.length} agents\n`)
 
-    // Verify response shape
-    expect(result.agents).toBeDefined()
     expect(Array.isArray(result.agents)).toBe(true)
     expect(result.total).toBeGreaterThanOrEqual(result.agents.length)
 
-    // The newly registered agent should be in the list
     const newAgent = result.agents.find((a) => a.agentId === agentId)
     expect(newAgent).toBeDefined()
     expect(newAgent?.name).toBeDefined()
@@ -160,7 +155,7 @@ describe.skipIf(SKIP_REASON)('Identity Integration Tests (Testnet)', () => {
 
     const result = await identityRead.reputation(config, {
       agentId,
-      clientAddresses: [TEST_ADDRESS!],
+      clientAddresses: [evmAddress],  // rep.clients contains 0x addresses
     })
 
     console.log('✅ Reputation updated!')
@@ -170,8 +165,8 @@ describe.skipIf(SKIP_REASON)('Identity Integration Tests (Testnet)', () => {
 
     expect(result.agentId).toBe(agentId)
     expect(result.score).toBeGreaterThanOrEqual(0)
-    expect(result.count).toBeGreaterThanOrEqual(1) // At least our feedback
-    expect(result.clients).toContain(TEST_ADDRESS!)
+    expect(result.count).toBeGreaterThanOrEqual(1)
+    expect(result.clients).toContain(evmAddress)
   }, 60000)
 
   it('lists feedback entries for the agent', async () => {
@@ -179,17 +174,15 @@ describe.skipIf(SKIP_REASON)('Identity Integration Tests (Testnet)', () => {
 
     const result = await identityRead.feedbackList(config, {
       agentId,
-      clientAddresses: [TEST_ADDRESS!],
+      clientAddresses: [evmAddress],  // entries use 0x addresses
     })
 
     console.log(`✅ Found ${result.entries.length} feedback entries\n`)
 
     expect(result.agentId).toBe(agentId)
-    expect(result.entries).toBeDefined()
     expect(Array.isArray(result.entries)).toBe(true)
 
-    // Should have at least the feedback we just gave
-    const ourFeedback = result.entries.find((e) => e.client === TEST_ADDRESS!)
+    const ourFeedback = result.entries.find((e) => e.client === evmAddress)
     expect(ourFeedback).toBeDefined()
     expect(ourFeedback?.value).toBeCloseTo(85, 1)
     expect(ourFeedback?.tag1).toBe('accuracy')
