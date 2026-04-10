@@ -37,6 +37,51 @@ const serviceEntrySchema = z.object({
   version: z.string().optional().describe('Protocol version (e.g. "2025-06-18" for MCP, "0.3.0" for A2A).'),
 })
 
+const actionParameterSchema: z.ZodType<any> = z.object({
+  type: z.enum(['string', 'integer', 'number', 'boolean', 'array', 'object']),
+  description: z.string().optional(),
+  required: z.boolean().optional(),
+  format: z.string().optional(),
+  enum: z.array(z.string()).optional(),
+  minimum: z.number().optional(),
+  maximum: z.number().optional(),
+  pattern: z.string().optional(),
+  default: z.union([z.string(), z.number(), z.boolean()]).optional(),
+  items: z.lazy(() => actionParameterSchema).optional(),
+  properties: z.record(z.lazy(() => actionParameterSchema)).optional(),
+  const: z.union([z.string(), z.number(), z.boolean()]).optional(),
+})
+
+const actionPrerequisiteSchema = z.object({
+  type: z.enum(['authz_grant', 'token_approval', 'deposit', 'custom']),
+  description: z.string().optional(),
+  grantee: z.string().optional(),
+  msg_types: z.array(z.string()).optional(),
+  spender: z.string().optional(),
+  token: z.string().optional(),
+})
+
+const actionSchema = z.object({
+  name: z.string().min(1).describe('Action name (e.g., "place_order", "get_portfolio").'),
+  description: z.string().min(1).describe('What this action does.'),
+  transport: z.enum([
+    'cosmwasm_execute', 'cosmwasm_query', 'evm_call', 'evm_send',
+    'rest', 'grpc', 'mcp_tool',
+  ]).describe('Execution transport.'),
+  contract: z.string().optional().describe('Contract or endpoint address.'),
+  url: z.string().optional().describe('URL for REST/gRPC/MCP transports.'),
+  prerequisites: z.array(actionPrerequisiteSchema).optional()
+    .describe('Required grants, approvals, or deposits before calling.'),
+  parameters: z.record(actionParameterSchema)
+    .describe('Named parameters this action accepts (JSON Schema style).'),
+  funds: z.object({
+    denom: z.string(),
+    description: z.string().optional(),
+  }).optional().describe('Tokens to attach (for CosmWasm execute).'),
+  example: z.record(z.unknown()).optional()
+    .describe('Complete working example of calling this action.'),
+})
+
 const server = new McpServer({
   name: 'injective-agent',
   version: '0.1.0',
@@ -831,12 +876,13 @@ server.tool(
     description: z.string().optional().describe('Short description of what the agent does. Shown on 8004scan.'),
     image: z.string().optional().describe('Image URL (https://, http://, or ipfs://). Displayed on 8004scan.'),
     services: z.array(serviceEntrySchema).optional().describe('Service endpoints the agent exposes. Use uppercase names: "MCP", "A2A", "OASF".'),
+    actions: z.array(actionSchema).optional().describe('Callable operations this agent exposes. LLMs and other agents read these to interact programmatically.'),
     wallet: ethAddress.optional().describe('EVM wallet to link. Only works if it matches the keystore address. Omit to skip.'),
     uri: z.string().optional().describe('Pre-built token URI. If provided, skips auto card generation and IPFS upload.'),
   },
-  async ({ address, password, name, type, builderCode, description, image, services, wallet, uri }) => {
+  async ({ address, password, name, type, builderCode, description, image, services, actions, wallet, uri }) => {
     const result = await identity.register(config, {
-      address, password, name, type, builderCode, description, image, services, wallet, uri,
+      address, password, name, type, builderCode, description, image, services, actions, wallet, uri,
     })
     return {
       content: [{
@@ -861,12 +907,13 @@ server.tool(
     image: z.string().optional().describe('New image URL (https://, http://, or ipfs://).'),
     services: z.array(serviceEntrySchema).optional().describe('New service endpoints (replaces existing).'),
     removeServices: z.array(serviceEntrySchema.shape.name).optional().describe('Service names to remove from the card (uppercase: "MCP", "A2A", "OASF").'),
+    actions: z.array(actionSchema).optional().describe('New action schemas (replaces all existing actions). Pass empty array to clear.'),
     uri: z.string().optional().describe('Pre-built token URI. Skips card generation if provided.'),
     wallet: ethAddress.optional().describe('New linked EVM wallet. Only works if it matches the keystore address.'),
   },
-  async ({ address, password, agentId, name, type, builderCode, description, image, services, removeServices, uri, wallet }) => {
+  async ({ address, password, agentId, name, type, builderCode, description, image, services, removeServices, actions, uri, wallet }) => {
     const result = await identity.update(config, {
-      address, password, agentId, name, type, builderCode, description, image, services, removeServices, uri, wallet,
+      address, password, agentId, name, type, builderCode, description, image, services, removeServices, actions, uri, wallet,
     })
     return {
       content: [{

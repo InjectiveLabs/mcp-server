@@ -6,7 +6,7 @@
  * MCP JSON shapes that server.ts expects.
  */
 import type { Config } from '../config/index.js'
-import type { AgentType, ServiceName, ServiceEntry } from '@injective/agent-sdk'
+import type { AgentType, ServiceName, ServiceEntry, ActionSchema } from '@injective/agent-sdk'
 import { AgentClient, PinataStorage } from '@injective/agent-sdk'
 import { wallets } from '../wallets/index.js'
 import { IdentityTxFailed, DeregisterNotConfirmed } from '../errors/index.js'
@@ -26,6 +26,7 @@ export interface RegisterParams {
   description?: string
   image?: string
   services?: ServiceEntry[]
+  actions?: ActionSchema[]
   x402?: boolean
 }
 
@@ -53,6 +54,7 @@ export interface UpdateParams {
   image?: string
   services?: ServiceEntry[]
   removeServices?: ServiceName[]
+  actions?: ActionSchema[]
   x402?: boolean
 }
 
@@ -170,6 +172,7 @@ export const identity = {
         description: params.description,
         image: params.image,
         services: params.services,
+        actions: params.actions,
         x402: params.x402,
       })
 
@@ -187,7 +190,7 @@ export const identity = {
   async update(config: Config, params: UpdateParams): Promise<UpdateResult> {
     const hasCardUpdate = params.description !== undefined || params.image !== undefined
       || params.services !== undefined || (params.removeServices?.length ?? 0) > 0
-      || params.x402 !== undefined
+      || params.actions !== undefined || params.x402 !== undefined
     const jwt = (hasCardUpdate && !params.uri) ? requirePinataJwt() : undefined
     const storage = jwt ? new PinataStorage({ jwt }) : undefined
 
@@ -204,6 +207,7 @@ export const identity = {
         image: params.image,
         services: params.services,
         removeServices: params.removeServices,
+        actions: params.actions,
         x402: params.x402,
       })
 
