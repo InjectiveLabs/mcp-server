@@ -6,7 +6,7 @@
  * MCP JSON shapes that server.ts expects.
  */
 import type { Config } from '../config/index.js'
-import type { AgentType, ServiceType, ServiceEntry } from '@injective/agent-sdk'
+import type { AgentType, ServiceName, ServiceEntry } from '@injective/agent-sdk'
 import { AgentClient, PinataStorage } from '@injective/agent-sdk'
 import { wallets } from '../wallets/index.js'
 import { IdentityTxFailed, DeregisterNotConfirmed } from '../errors/index.js'
@@ -52,7 +52,7 @@ export interface UpdateParams {
   description?: string
   image?: string
   services?: ServiceEntry[]
-  removeServices?: string[]
+  removeServices?: ServiceName[]
   x402?: boolean
 }
 
@@ -203,7 +203,7 @@ export const identity = {
         description: params.description,
         image: params.image,
         services: params.services,
-        removeServices: params.removeServices as ServiceType[] | undefined,
+        removeServices: params.removeServices,
         x402: params.x402,
       })
 

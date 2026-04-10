@@ -31,9 +31,10 @@ import { identityRead } from '../identity/read.js'
 const injAddress = z.string().regex(/^inj1[a-z0-9]{38}$/, 'Must be a valid inj1... address (42 chars)')
 const numericString = z.string().regex(/^\d+(\.\d+)?$/, 'Must be a positive numeric string')
 const serviceEntrySchema = z.object({
-  type: z.enum(['a2a', 'mcp', 'rest', 'grpc', 'webhook', 'custom']).describe('Service type.'),
-  url: z.string().url().describe('Service endpoint URL.'),
+  name: z.enum(['MCP', 'A2A', 'web', 'OASF', 'agentWallet', 'ENS', 'DID', 'custom']).describe('Service name (uppercase protocol names: "MCP", "A2A", "OASF"; lowercase: "web", "custom").'),
+  endpoint: z.string().url().describe('Service endpoint URL.'),
   description: z.string().optional().describe('Service description.'),
+  version: z.string().optional().describe('Protocol version (e.g. "2025-06-18" for MCP, "0.3.0" for A2A).'),
 })
 
 const server = new McpServer({
@@ -829,7 +830,7 @@ server.tool(
     builderCode: z.string().min(1).describe('Builder identifier string.'),
     description: z.string().optional().describe('Short description of what the agent does. Shown on 8004scan.'),
     image: z.string().optional().describe('Image URL (https://, http://, or ipfs://). Displayed on 8004scan.'),
-    services: z.array(serviceEntrySchema).optional().describe('Service endpoints the agent exposes.'),
+    services: z.array(serviceEntrySchema).optional().describe('Service endpoints the agent exposes. Use uppercase names: "MCP", "A2A", "OASF".'),
     wallet: ethAddress.optional().describe('EVM wallet to link. Only works if it matches the keystore address. Omit to skip.'),
     uri: z.string().optional().describe('Pre-built token URI. If provided, skips auto card generation and IPFS upload.'),
   },
@@ -858,12 +859,8 @@ server.tool(
     builderCode: z.string().min(1).optional().describe('New builder identifier string.'),
     description: z.string().optional().describe('New agent description.'),
     image: z.string().optional().describe('New image URL (https://, http://, or ipfs://).'),
-    services: z.array(z.object({
-      type: z.enum(['a2a', 'mcp', 'rest', 'grpc', 'webhook', 'custom']).describe('Service type.'),
-      url: z.string().url().describe('Service endpoint URL.'),
-      description: z.string().optional().describe('Service description.'),
-    })).optional().describe('New service endpoints (replaces existing).'),
-    removeServices: z.array(z.string()).optional().describe('Service types to remove from the card.'),
+    services: z.array(serviceEntrySchema).optional().describe('New service endpoints (replaces existing).'),
+    removeServices: z.array(serviceEntrySchema.shape.name).optional().describe('Service names to remove from the card (uppercase: "MCP", "A2A", "OASF").'),
     uri: z.string().optional().describe('Pre-built token URI. Skips card generation if provided.'),
     wallet: ethAddress.optional().describe('New linked EVM wallet. Only works if it matches the keystore address.'),
   },
