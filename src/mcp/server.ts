@@ -879,10 +879,17 @@ server.tool(
     actions: z.array(actionSchema).optional().describe('Callable operations this agent exposes. LLMs and other agents read these to interact programmatically.'),
     wallet: ethAddress.optional().describe('EVM wallet to link. Only works if it matches the keystore address. Omit to skip.'),
     uri: z.string().optional().describe('Pre-built token URI. If provided, skips auto card generation and IPFS upload.'),
+    supportedTrust: z.array(z.string()).optional().describe('ERC-8004 trust models the agent supports (e.g., ["reputation", "crypto-economic", "tee-attestation"]).'),
+    tags: z.array(z.string()).optional().describe('Searchable discovery tags (e.g., ["defi", "trading", "grid"]).'),
+    version: z.string().optional().describe('Semantic version string for the agent (e.g., "1.0.0").'),
+    license: z.string().optional().describe('SPDX license identifier (e.g., "MIT", "Apache-2.0").'),
+    sourceCode: z.string().optional().describe('URL to the agent\'s source code repository.'),
+    documentation: z.string().optional().describe('URL to the agent\'s documentation.'),
   },
-  async ({ address, password, name, type, builderCode, description, image, services, actions, wallet, uri }) => {
+  async ({ address, password, name, type, builderCode, description, image, services, actions, wallet, uri, supportedTrust, tags, version, license, sourceCode, documentation }) => {
     const result = await identity.register(config, {
       address, password, name, type, builderCode, description, image, services, actions, wallet, uri,
+      supportedTrust, tags, version, license, sourceCode, documentation,
     })
     return {
       content: [{
@@ -910,10 +917,18 @@ server.tool(
     actions: z.array(actionSchema).optional().describe('New action schemas (replaces all existing actions). Pass empty array to clear.'),
     uri: z.string().optional().describe('Pre-built token URI. Skips card generation if provided.'),
     wallet: ethAddress.optional().describe('New linked EVM wallet. Only works if it matches the keystore address.'),
+    active: z.boolean().optional().describe('Toggle the agent\'s active flag. When false, the agent is hidden from 8004scan discovery.'),
+    supportedTrust: z.array(z.string()).optional().describe('Replace the agent\'s declared trust models (e.g., ["reputation", "crypto-economic", "tee-attestation"]).'),
+    tags: z.array(z.string()).optional().describe('Replace the agent\'s discovery tags (e.g., ["defi", "trading"]).'),
+    version: z.string().optional().describe('New semantic version string (e.g., "1.1.0").'),
+    license: z.string().optional().describe('New SPDX license identifier (e.g., "MIT", "Apache-2.0").'),
+    sourceCode: z.string().optional().describe('New source code URL.'),
+    documentation: z.string().optional().describe('New documentation URL.'),
   },
-  async ({ address, password, agentId, name, type, builderCode, description, image, services, removeServices, actions, uri, wallet }) => {
+  async ({ address, password, agentId, name, type, builderCode, description, image, services, removeServices, actions, uri, wallet, active, supportedTrust, tags, version, license, sourceCode, documentation }) => {
     const result = await identity.update(config, {
       address, password, agentId, name, type, builderCode, description, image, services, removeServices, actions, uri, wallet,
+      active, supportedTrust, tags, version, license, sourceCode, documentation,
     })
     return {
       content: [{

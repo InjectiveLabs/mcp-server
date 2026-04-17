@@ -28,6 +28,12 @@ export interface RegisterParams {
   services?: ServiceEntry[]
   actions?: ActionSchema[]
   x402?: boolean
+  supportedTrust?: string[]
+  tags?: string[]
+  version?: string
+  license?: string
+  sourceCode?: string
+  documentation?: string
 }
 
 export interface RegisterResult {
@@ -56,6 +62,13 @@ export interface UpdateParams {
   removeServices?: ServiceName[]
   actions?: ActionSchema[]
   x402?: boolean
+  active?: boolean
+  supportedTrust?: string[]
+  tags?: string[]
+  version?: string
+  license?: string
+  sourceCode?: string
+  documentation?: string
 }
 
 export interface UpdateResult {
@@ -174,6 +187,12 @@ export const identity = {
         services: params.services,
         actions: params.actions,
         x402: params.x402,
+        supportedTrust: params.supportedTrust,
+        tags: params.tags,
+        version: params.version,
+        license: params.license,
+        sourceCode: params.sourceCode,
+        documentation: params.documentation,
       })
 
       return {
@@ -191,6 +210,10 @@ export const identity = {
     const hasCardUpdate = params.description !== undefined || params.image !== undefined
       || params.services !== undefined || (params.removeServices?.length ?? 0) > 0
       || params.actions !== undefined || params.x402 !== undefined
+      || params.active !== undefined || params.supportedTrust !== undefined
+      || params.tags !== undefined || params.version !== undefined
+      || params.license !== undefined || params.sourceCode !== undefined
+      || params.documentation !== undefined
     const jwt = (hasCardUpdate && !params.uri) ? requirePinataJwt() : undefined
     const storage = jwt ? new PinataStorage({ jwt }) : undefined
 
@@ -209,6 +232,13 @@ export const identity = {
         removeServices: params.removeServices,
         actions: params.actions,
         x402: params.x402,
+        active: params.active,
+        supportedTrust: params.supportedTrust,
+        tags: params.tags,
+        version: params.version,
+        license: params.license,
+        sourceCode: params.sourceCode,
+        documentation: params.documentation,
       })
 
       let cardUri: string | undefined
