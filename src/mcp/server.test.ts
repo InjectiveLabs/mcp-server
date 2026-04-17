@@ -527,3 +527,55 @@ describe('trade_limit_states parameter validation', () => {
     expect(result.success).toBe(false)
   })
 })
+
+// ─── Identity Tool Schema Tests ─────────────────────────────────────────────
+
+describe('builderCode schema (identity)', () => {
+  const builderCode = z.string().min(1)
+
+  it('accepts any non-empty string', () => {
+    expect(builderCode.safeParse('my-builder-code').success).toBe(true)
+  })
+
+  it('rejects empty string', () => {
+    expect(builderCode.safeParse('').success).toBe(false)
+  })
+})
+
+describe('ethAddress schema', () => {
+  it('accepts valid address', () => {
+    expect(ethAddress.safeParse('0x' + 'a'.repeat(40)).success).toBe(true)
+  })
+
+  it('accepts mixed-case address', () => {
+    expect(ethAddress.safeParse('0xAbCdEf0123456789AbCdEf0123456789AbCdEf01').success).toBe(true)
+  })
+
+  it('rejects short address', () => {
+    expect(ethAddress.safeParse('0x' + 'a'.repeat(39)).success).toBe(false)
+  })
+
+  it('rejects too-long address', () => {
+    expect(ethAddress.safeParse('0x' + 'a'.repeat(41)).success).toBe(false)
+  })
+
+  it('rejects missing 0x prefix', () => {
+    expect(ethAddress.safeParse('a'.repeat(40)).success).toBe(false)
+  })
+})
+
+describe('agent type field schema (identity)', () => {
+  const agentType = z.string().min(1)
+
+  it('accepts "trading"', () => {
+    expect(agentType.safeParse('trading').success).toBe(true)
+  })
+
+  it('accepts "analytics"', () => {
+    expect(agentType.safeParse('analytics').success).toBe(true)
+  })
+
+  it('rejects empty string', () => {
+    expect(agentType.safeParse('').success).toBe(false)
+  })
+})

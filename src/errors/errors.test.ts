@@ -18,6 +18,9 @@ import {
   UnsupportedBridgeChain,
   InvalidOrderStatesQuery,
   InvalidOrderParameters,
+  IdentityNotFound,
+  IdentityTxFailed,
+  DeregisterNotConfirmed,
 } from './index.js'
 
 describe('error classes', () => {
@@ -142,6 +145,27 @@ describe('error classes', () => {
     expect(err.message).toContain('price must be > 0')
   })
 
+  it('IdentityNotFound includes agentId', () => {
+    const err = new IdentityNotFound('42')
+    expect(err.code).toBe('IDENTITY_NOT_FOUND')
+    expect(err.name).toBe('IdentityNotFound')
+    expect(err.message).toContain('42')
+  })
+
+  it('IdentityTxFailed includes reason', () => {
+    const err = new IdentityTxFailed('gas estimation failed')
+    expect(err.code).toBe('IDENTITY_TX_FAILED')
+    expect(err.name).toBe('IdentityTxFailed')
+    expect(err.message).toContain('gas estimation failed')
+  })
+
+  it('DeregisterNotConfirmed has correct message', () => {
+    const err = new DeregisterNotConfirmed()
+    expect(err.code).toBe('DEREGISTER_NOT_CONFIRMED')
+    expect(err.name).toBe('DeregisterNotConfirmed')
+    expect(err.message).toContain('confirm=true')
+  })
+
   it('all errors are instanceof Error', () => {
     const errors = [
       new WalletNotFound('x'),
@@ -162,6 +186,9 @@ describe('error classes', () => {
       new UnsupportedBridgeChain('x'),
       new InvalidOrderStatesQuery(),
       new InvalidOrderParameters('x'),
+      new IdentityNotFound('x'),
+      new IdentityTxFailed('x'),
+      new DeregisterNotConfirmed(),
     ]
     for (const err of errors) {
       expect(err).toBeInstanceOf(Error)

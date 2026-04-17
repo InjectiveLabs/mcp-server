@@ -141,3 +141,27 @@ export class InvalidOrderParameters extends Error {
     this.name = 'InvalidOrderParameters'
   }
 }
+
+export class IdentityNotFound extends Error {
+  readonly code = 'IDENTITY_NOT_FOUND'
+  constructor(agentId: string) {
+    super(`Identity not found for agent: ${agentId}`)
+    this.name = 'IdentityNotFound'
+  }
+}
+
+export class IdentityTxFailed extends Error {
+  readonly code = 'IDENTITY_TX_FAILED'
+  constructor(reason: string) {
+    super(`Identity transaction failed: ${reason}`)
+    this.name = 'IdentityTxFailed'
+  }
+}
+
+export class DeregisterNotConfirmed extends Error {
+  readonly code = 'DEREGISTER_NOT_CONFIRMED'
+  constructor() {
+    super('Must set confirm=true to deregister (irreversible)')
+    this.name = 'DeregisterNotConfirmed'
+  }
+}
