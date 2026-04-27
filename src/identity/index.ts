@@ -9,7 +9,12 @@ import type { Config } from '../config/index.js'
 import type { AgentType, ServiceName, ServiceEntry, ActionSchema } from '@injective/agent-sdk'
 import { AgentClient, PinataStorage } from '@injective/agent-sdk'
 import { wallets } from '../wallets/index.js'
-import { IdentityTxFailed, DeregisterNotConfirmed } from '../errors/index.js'
+import {
+  IdentityTxFailed,
+  DeregisterNotConfirmed,
+  NotAgentOwner,
+  DeregisterNotApplied,
+} from '../errors/index.js'
 
 export type { ServiceEntry } from '@injective/agent-sdk'
 
@@ -153,6 +158,14 @@ function wrapSdkError(err: unknown, ...passthrough: (new (...a: never[]) => Erro
   throw new IdentityTxFailed(err instanceof Error ? err.message : String(err))
 }
 
+// ERC721 "nonexistent token" detection — substring match because the SDK
+// surfaces these as plain ContractError without a typed code. Used by
+// deregister's post-burn check and read.ts's status() handler.
+export function isAgentNotFoundError(err: unknown): boolean {
+  const msg = err instanceof Error ? err.message : String(err)
+  return msg.includes('ERC721') || msg.includes('nonexistent') || msg.includes('invalid token')
+}
+
 function walletLinkInfo(wallet: string | undefined, signerAddress: string, txHashes: `0x${string}`[]): WalletLinkInfo {
   if (!wallet) return {}
   if (wallet.toLowerCase() !== signerAddress.toLowerCase()) {
@@ -261,11 +274,39 @@ export const identity = {
   async deregister(config: Config, params: DeregisterParams): Promise<DeregisterResult> {
     if (!params.confirm) throw new DeregisterNotConfirmed()
 
+    const client = createClient(config, params.address, params.password)
+    const id = BigInt(params.agentId)
+
+    // Defense-in-depth ownership pre-check: the contract enforces this too,
+    // but failing here yields a clear typed error instead of a contract revert
+    // wrapped as IdentityTxFailed. Also closes the LLM-controlled-confirm gap.
+    let status
     try {
-      const client = createClient(config, params.address, params.password)
-      const r = await client.deregister(BigInt(params.agentId))
-      return { agentId: params.agentId, txHash: r.txHash }
+      status = await client.getStatus(id)
+    } catch (err) { wrapSdkError(err) }
+    if (status.owner.toLowerCase() !== client.address.toLowerCase()) {
+      throw new NotAgentOwner(params.agentId, client.address, status.owner)
+    }
+
+    let txHash: `0x${string}`
+    try {
+      const r = await client.deregister(id)
+      txHash = r.txHash
     } catch (err) { wrapSdkError(err, DeregisterNotConfirmed) }
+
+    // Post-condition: getStatus must now throw "nonexistent" — the SDK waits
+    // for the receipt internally but doesn't check receipt.status, so a tx
+    // that reverted post-simulation would still return a hash. Re-reading
+    // proves the burn was applied.
+    try {
+      await client.getStatus(id)
+    } catch (err) {
+      if (isAgentNotFoundError(err)) {
+        return { agentId: params.agentId, txHash }
+      }
+      throw err
+    }
+    throw new DeregisterNotApplied(params.agentId, txHash)
   },
 
   async giveFeedback(config: Config, params: GiveFeedbackParams): Promise<GiveFeedbackResult> {

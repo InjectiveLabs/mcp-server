@@ -864,6 +864,28 @@ server.tool(
 
 // ─── Identity Tools ─────────────────────────────────────────────────────────
 
+// Schema-level validation: every agentId is BigInt'd downstream, so we must
+// reject non-integer strings here to surface a clean validation error rather
+// than a misleading IdentityTxFailed.
+const agentIdString = z.string().regex(/^\d+$/, 'agentId must be a non-negative integer string')
+
+// IPFS URLs use a custom scheme that z.string().url() rejects on some Node
+// versions; allow the three schemes we actually upload to chain.
+const metadataUrl = z.string().regex(
+  /^(https?|ipfs):\/\//,
+  'URL must start with https://, http://, or ipfs:// (no javascript:, data:, file://)',
+)
+
+// 32-byte hex digest for ERC-8004 feedbackHash field.
+const feedbackHashHex = z.string().regex(
+  /^0x[0-9a-fA-F]{64}$/,
+  'feedbackHash must be a 32-byte hex string (0x + 64 hex chars)',
+)
+
+// Owner filter accepts either inj1... or 0x... — anything else flows into
+// sdk.getAgentsByOwner as a malformed hex address and surfaces cryptic errors.
+const agentOwnerFilter = z.union([injAddress, ethAddress])
+
 server.tool(
   'agent_register',
   'Register a new AI agent identity on the Injective ERC-8004 registry. Mints an NFT with an Agent Card (auto-uploaded to IPFS via Pinata when PINATA_JWT is set). Wallet linking only works when the wallet matches the keystore address. IMPORTANT: Real on-chain transaction that costs gas.',
@@ -874,17 +896,17 @@ server.tool(
     type: z.string().min(1).describe('Agent type (e.g., "trading", "analytics", "data").'),
     builderCode: z.string().min(1).describe('Builder identifier string.'),
     description: z.string().optional().describe('Short description of what the agent does. Shown on 8004scan.'),
-    image: z.string().optional().describe('Image URL (https://, http://, or ipfs://). Displayed on 8004scan.'),
+    image: metadataUrl.optional().describe('Image URL (https://, http://, or ipfs://). Displayed on 8004scan.'),
     services: z.array(serviceEntrySchema).optional().describe('Service endpoints the agent exposes. Use uppercase names: "MCP", "A2A", "OASF".'),
     actions: z.array(actionSchema).optional().describe('Callable operations this agent exposes. LLMs and other agents read these to interact programmatically.'),
     wallet: ethAddress.optional().describe('EVM wallet to link. Only works if it matches the keystore address. Omit to skip.'),
-    uri: z.string().optional().describe('Pre-built token URI. If provided, skips auto card generation and IPFS upload.'),
+    uri: metadataUrl.optional().describe('Pre-built token URI (https://, http://, or ipfs://). If provided, skips auto card generation and IPFS upload.'),
     supportedTrust: z.array(z.string()).optional().describe('ERC-8004 trust models the agent supports (e.g., ["reputation", "crypto-economic", "tee-attestation"]).'),
     tags: z.array(z.string()).optional().describe('Searchable discovery tags (e.g., ["defi", "trading", "grid"]).'),
     version: z.string().optional().describe('Semantic version string for the agent (e.g., "1.0.0").'),
     license: z.string().optional().describe('SPDX license identifier (e.g., "MIT", "Apache-2.0").'),
-    sourceCode: z.string().optional().describe('URL to the agent\'s source code repository.'),
-    documentation: z.string().optional().describe('URL to the agent\'s documentation.'),
+    sourceCode: metadataUrl.optional().describe('URL to the agent\'s source code repository (https://, http://, or ipfs://).'),
+    documentation: metadataUrl.optional().describe('URL to the agent\'s documentation (https://, http://, or ipfs://).'),
   },
   async ({ address, password, name, type, builderCode, description, image, services, actions, wallet, uri, supportedTrust, tags, version, license, sourceCode, documentation }) => {
     const result = await identity.register(config, {
@@ -906,24 +928,24 @@ server.tool(
   {
     address: injAddress.describe('Your inj1... address (must be in local keystore).'),
     password: z.string().describe('Keystore password to decrypt the signing key.'),
-    agentId: z.string().min(1).describe('The numeric agent ID (from agent_register).'),
+    agentId: agentIdString.describe('The numeric agent ID (from agent_register).'),
     name: z.string().min(1).optional().describe('New agent name.'),
     type: z.string().min(1).optional().describe('New agent type (e.g., "trading", "analytics").'),
     builderCode: z.string().min(1).optional().describe('New builder identifier string.'),
     description: z.string().optional().describe('New agent description.'),
-    image: z.string().optional().describe('New image URL (https://, http://, or ipfs://).'),
+    image: metadataUrl.optional().describe('New image URL (https://, http://, or ipfs://).'),
     services: z.array(serviceEntrySchema).optional().describe('New service endpoints (replaces existing).'),
     removeServices: z.array(serviceEntrySchema.shape.name).optional().describe('Service names to remove from the card (uppercase: "MCP", "A2A", "OASF").'),
     actions: z.array(actionSchema).optional().describe('New action schemas (replaces all existing actions). Pass empty array to clear.'),
-    uri: z.string().optional().describe('Pre-built token URI. Skips card generation if provided.'),
+    uri: metadataUrl.optional().describe('Pre-built token URI (https://, http://, or ipfs://). Skips card generation if provided.'),
     wallet: ethAddress.optional().describe('New linked EVM wallet. Only works if it matches the keystore address.'),
     active: z.boolean().optional().describe('Toggle the agent\'s active flag. When false, the agent is hidden from 8004scan discovery.'),
     supportedTrust: z.array(z.string()).optional().describe('Replace the agent\'s declared trust models (e.g., ["reputation", "crypto-economic", "tee-attestation"]).'),
     tags: z.array(z.string()).optional().describe('Replace the agent\'s discovery tags (e.g., ["defi", "trading"]).'),
     version: z.string().optional().describe('New semantic version string (e.g., "1.1.0").'),
     license: z.string().optional().describe('New SPDX license identifier (e.g., "MIT", "Apache-2.0").'),
-    sourceCode: z.string().optional().describe('New source code URL.'),
-    documentation: z.string().optional().describe('New documentation URL.'),
+    sourceCode: metadataUrl.optional().describe('New source code URL (https://, http://, or ipfs://).'),
+    documentation: metadataUrl.optional().describe('New documentation URL (https://, http://, or ipfs://).'),
   },
   async ({ address, password, agentId, name, type, builderCode, description, image, services, removeServices, actions, uri, wallet, active, supportedTrust, tags, version, license, sourceCode, documentation }) => {
     const result = await identity.update(config, {
@@ -945,7 +967,7 @@ server.tool(
   {
     address: injAddress.describe('Your inj1... address (must be in local keystore).'),
     password: z.string().describe('Keystore password to decrypt the signing key.'),
-    agentId: z.string().min(1).describe('The numeric agent ID to deregister.'),
+    agentId: agentIdString.describe('The numeric agent ID to deregister.'),
     confirm: z.boolean().describe('Must be true to proceed. This action is irreversible.'),
   },
   async ({ address, password, agentId, confirm }) => {
@@ -965,7 +987,7 @@ server.tool(
   'agent_status',
   'Get complete information about a specific agent: metadata, linked wallet, owner address, token URI, and reputation score with feedback count. Read-only, no gas cost.',
   {
-    agentId: z.string().min(1).describe('The numeric agent ID to look up.'),
+    agentId: agentIdString.describe('The numeric agent ID to look up.'),
   },
   async ({ agentId }) => {
     const result = await identityRead.status(config, { agentId })
@@ -982,7 +1004,7 @@ server.tool(
   'agent_list',
   'Find registered agents on Injective. Filter by owner address or agent type. Returns agent IDs with summary metadata. Read-only, no gas cost.',
   {
-    owner: z.string().optional().describe('Filter by owner — accepts inj1... or 0x... address.'),
+    owner: agentOwnerFilter.optional().describe('Filter by owner — accepts inj1... or 0x... address.'),
     type: z.string().optional().describe('Filter by agent type (e.g., "trading", "analytics").'),
     limit: z.number().int().min(1).max(100).optional().describe('Max agents to return (default 20, max 100).'),
   },
@@ -1001,7 +1023,7 @@ server.tool(
   'agent_reputation',
   'Get reputation summary for an agent: normalized score, feedback count, and list of evaluator addresses. Read-only, no gas cost.',
   {
-    agentId: z.string().min(1).describe('The numeric agent ID.'),
+    agentId: agentIdString.describe('The numeric agent ID.'),
     clientAddresses: z.array(ethAddress).optional().describe('Filter by specific evaluator addresses.'),
     tag1: z.string().optional().describe('Filter by tag1.'),
     tag2: z.string().optional().describe('Filter by tag2.'),
@@ -1016,7 +1038,7 @@ server.tool(
   'agent_feedback_list',
   'List individual feedback entries for an agent with value, tags, and revocation status. Read-only, no gas cost.',
   {
-    agentId: z.string().min(1).describe('The numeric agent ID.'),
+    agentId: agentIdString.describe('The numeric agent ID.'),
     clientAddresses: z.array(ethAddress).optional().describe('Filter by evaluator addresses.'),
     tag1: z.string().optional().describe('Filter by tag1.'),
     tag2: z.string().optional().describe('Filter by tag2.'),
@@ -1034,14 +1056,14 @@ server.tool(
   {
     address: injAddress.describe('Your inj1... address (must be in local keystore).'),
     password: z.string().describe('Keystore password.'),
-    agentId: z.string().min(1).describe('The agent ID to rate.'),
-    value: z.number().describe('Rating value (integer). Meaning depends on your scale.'),
+    agentId: agentIdString.describe('The agent ID to rate.'),
+    value: z.number().int().describe('Rating value (integer). Meaning depends on your scale.'),
     valueDecimals: z.number().int().min(0).max(18).optional().describe('Decimal places for the value (default 0).'),
     tag1: z.string().optional().describe('Category tag (e.g., "accuracy", "speed").'),
     tag2: z.string().optional().describe('Secondary tag.'),
     endpoint: z.string().optional().describe('Service endpoint being rated.'),
-    feedbackURI: z.string().optional().describe('URI with detailed feedback.'),
-    feedbackHash: z.string().optional().describe('32-byte hex hash of feedback content.'),
+    feedbackURI: metadataUrl.optional().describe('URI with detailed feedback (https://, http://, or ipfs://).'),
+    feedbackHash: feedbackHashHex.optional().describe('32-byte hex hash of feedback content (0x + 64 hex chars).'),
   },
   async ({ address, password, agentId, value, valueDecimals, tag1, tag2, endpoint, feedbackURI, feedbackHash }) => {
     const result = await identity.giveFeedback(config, {
@@ -1057,7 +1079,7 @@ server.tool(
   {
     address: injAddress.describe('Your inj1... address (must be in local keystore).'),
     password: z.string().describe('Keystore password.'),
-    agentId: z.string().min(1).describe('The agent ID.'),
+    agentId: agentIdString.describe('The agent ID.'),
     feedbackIndex: z.number().int().min(0).describe('The feedback index to revoke (from agent_give_feedback result or agent_feedback_list).'),
   },
   async ({ address, password, agentId, feedbackIndex }) => {

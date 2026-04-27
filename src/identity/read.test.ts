@@ -291,17 +291,12 @@ describe('identityRead.reputation', () => {
     })
   })
 
-  it('returns zeros on error', async () => {
+  it('rethrows SDK errors so callers can distinguish "no feedback" from "RPC unreachable"', async () => {
     mockGetReputation.mockRejectedValue(new Error('execution reverted'))
 
-    const result = await identityRead.reputation(config, { agentId: '999' })
-
-    expect(result).toEqual({
-      agentId: '999',
-      score: 0,
-      count: 0,
-      clients: [],
-    })
+    await expect(
+      identityRead.reputation(config, { agentId: '999' }),
+    ).rejects.toThrow('execution reverted')
   })
 })
 
@@ -371,12 +366,12 @@ describe('identityRead.feedbackList', () => {
     expect(result.entries[0]!.value).toBeCloseTo(12.345, 3)
   })
 
-  it('returns empty entries on error', async () => {
+  it('rethrows SDK errors so RPC failures don\'t masquerade as empty feedback', async () => {
     mockGetFeedbackEntries.mockRejectedValue(new Error('execution reverted'))
 
-    const result = await identityRead.feedbackList(config, { agentId: '999' })
-
-    expect(result).toEqual({ agentId: '999', entries: [] })
+    await expect(
+      identityRead.feedbackList(config, { agentId: '999' }),
+    ).rejects.toThrow('execution reverted')
   })
 
   it('passes filter params to SDK', async () => {

@@ -165,3 +165,22 @@ export class DeregisterNotConfirmed extends Error {
     this.name = 'DeregisterNotConfirmed'
   }
 }
+
+export class NotAgentOwner extends Error {
+  readonly code = 'NOT_AGENT_OWNER'
+  constructor(agentId: string, signer: string, owner: string) {
+    super(`Signer ${signer} is not the owner of agent ${agentId} (owner: ${owner})`)
+    this.name = 'NotAgentOwner'
+  }
+}
+
+export class DeregisterNotApplied extends Error {
+  readonly code = 'DEREGISTER_NOT_APPLIED'
+  constructor(agentId: string, txHash: string) {
+    super(
+      `Deregister tx ${txHash} did not remove agent ${agentId} on-chain. ` +
+      `The transaction may have reverted post-broadcast. Verify on a block explorer.`,
+    )
+    this.name = 'DeregisterNotApplied'
+  }
+}

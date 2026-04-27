@@ -8,6 +8,7 @@ import { AgentReadClient } from '@injective/agent-sdk'
 import type { Config } from '../config/index.js'
 import { evm } from '../evm/index.js'
 import { IdentityNotFound } from '../errors/index.js'
+import { isAgentNotFoundError } from './index.js'
 
 // ─── Parameter / result types (consumed by server.ts) ─────────────────────
 
@@ -69,10 +70,7 @@ export const identityRead = {
         },
       }
     } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err)
-      if (msg.includes('ERC721') || msg.includes('nonexistent') || msg.includes('invalid token')) {
-        throw new IdentityNotFound(params.agentId)
-      }
+      if (isAgentNotFoundError(err)) throw new IdentityNotFound(params.agentId)
       throw err
     }
   },
@@ -114,47 +112,40 @@ export const identityRead = {
 
   async reputation(config: Config, params: ReputationParams): Promise<ReputationResult> {
     const sdk = getClient(config.network)
-    try {
-      const rep = await sdk.getReputation(BigInt(params.agentId), {
-        clientAddresses: params.clientAddresses as `0x${string}`[] | undefined,
-        tag1: params.tag1,
-        tag2: params.tag2,
-      })
-      return {
-        agentId: params.agentId,
-        score: rep.score,
-        count: rep.count,
-        clients: rep.clients as string[],
-      }
-    } catch (_err) {
-      // Reputation is best-effort — return zeros if the agent has no feedback or registry errors
-      return { agentId: params.agentId, score: 0, count: 0, clients: [] }
+    // Errors propagate: an LLM consumer must distinguish "agent has no feedback"
+    // (score 0, returned cleanly by the SDK) from "RPC unreachable" (thrown).
+    // Suppressing both as score 0 makes reputation-based trust decisions unsafe.
+    const rep = await sdk.getReputation(BigInt(params.agentId), {
+      clientAddresses: params.clientAddresses as `0x${string}`[] | undefined,
+      tag1: params.tag1,
+      tag2: params.tag2,
+    })
+    return {
+      agentId: params.agentId,
+      score: rep.score,
+      count: rep.count,
+      clients: rep.clients as string[],
     }
   },
 
   async feedbackList(config: Config, params: FeedbackListParams): Promise<FeedbackListResult> {
     const sdk = getClient(config.network)
-    try {
-      const entries = await sdk.getFeedbackEntries(BigInt(params.agentId), {
-        clientAddresses: params.clientAddresses as `0x${string}`[] | undefined,
-        tag1: params.tag1,
-        tag2: params.tag2,
-        includeRevoked: params.includeRevoked,
-      })
-      return {
-        agentId: params.agentId,
-        entries: entries.map((e) => ({
-          client: e.client,
-          feedbackIndex: Number(e.feedbackIndex),
-          value: Number(e.value) / 10 ** e.decimals,
-          tag1: e.tags[0] ?? '',
-          tag2: e.tags[1] ?? '',
-          revoked: e.revoked,
-        })),
-      }
-    } catch (_err) {
-      // Feedback list is best-effort — return empty if agent has no feedback or registry errors
-      return { agentId: params.agentId, entries: [] }
+    const entries = await sdk.getFeedbackEntries(BigInt(params.agentId), {
+      clientAddresses: params.clientAddresses as `0x${string}`[] | undefined,
+      tag1: params.tag1,
+      tag2: params.tag2,
+      includeRevoked: params.includeRevoked,
+    })
+    return {
+      agentId: params.agentId,
+      entries: entries.map((e) => ({
+        client: e.client,
+        feedbackIndex: Number(e.feedbackIndex),
+        value: Number(e.value) / 10 ** e.decimals,
+        tag1: e.tags[0] ?? '',
+        tag2: e.tags[1] ?? '',
+        revoked: e.revoked,
+      })),
     }
   },
 }
