@@ -962,28 +962,6 @@ server.tool(
 )
 
 server.tool(
-  'agent_deregister',
-  'Permanently burn an agent\'s identity NFT. This is IRREVERSIBLE. The agent loses its on-chain identity, reputation, and discoverability. Requires confirm=true.',
-  {
-    address: injAddress.describe('Your inj1... address (must be in local keystore).'),
-    password: z.string().describe('Keystore password to decrypt the signing key.'),
-    agentId: agentIdString.describe('The numeric agent ID to deregister.'),
-    confirm: z.boolean().describe('Must be true to proceed. This action is irreversible.'),
-  },
-  async ({ address, password, agentId, confirm }) => {
-    const result = await identity.deregister(config, {
-      address, password, agentId, confirm,
-    })
-    return {
-      content: [{
-        type: 'text',
-        text: JSON.stringify(result, null, 2),
-      }],
-    }
-  },
-)
-
-server.tool(
   'agent_status',
   'Get complete information about a specific agent: metadata, linked wallet, owner address, token URI, and reputation score with feedback count. Read-only, no gas cost.',
   {

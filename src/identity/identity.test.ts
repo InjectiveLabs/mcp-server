@@ -1,17 +1,11 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { testConfig } from '../test-utils/index.js'
-import {
-  IdentityTxFailed,
-  DeregisterNotConfirmed,
-  NotAgentOwner,
-  DeregisterNotApplied,
-} from '../errors/index.js'
+import { IdentityTxFailed } from '../errors/index.js'
 
 // ─── Mocks ──────────────────────────────────────────────────────────────────
 
 const mockRegister = vi.fn()
 const mockUpdate = vi.fn()
-const mockDeregister = vi.fn()
 const mockGiveFeedback = vi.fn()
 const mockRevokeFeedback = vi.fn()
 const mockGetStatus = vi.fn()
@@ -26,7 +20,6 @@ vi.mock('@injective/agent-sdk', () => ({
       config: { chainId: 1439, identityRegistry: '0x19d1916ba1a2ac081b04893563a6ca0c92bc8c8e' },
       register: mockRegister,
       update: mockUpdate,
-      deregister: mockDeregister,
       giveFeedback: mockGiveFeedback,
       revokeFeedback: mockRevokeFeedback,
       getStatus: mockGetStatus,
@@ -265,107 +258,6 @@ describe('identity.update', () => {
 
     expect(result.cardUri).toBeUndefined()
     expect(mockGetStatus).not.toHaveBeenCalled()
-  })
-})
-
-// ─── deregister ─────────────────────────────────────────────────────────────
-
-describe('identity.deregister', () => {
-  beforeEach(() => {
-    vi.clearAllMocks()
-    mockDeregister.mockResolvedValue({ txHash: TEST_TX_HASH })
-    // Pre-check: signer owns the agent. Post-check: getStatus throws "nonexistent" (burn confirmed).
-    mockGetStatus
-      .mockResolvedValueOnce({ owner: SIGNER_ADDRESS, tokenUri: 'ipfs://x', wallet: '0x' + '00'.repeat(20), name: 'X', type: 'trading', builderCode: 'b', agentId: 42n, identityTuple: 't' })
-      .mockRejectedValueOnce(new Error('ERC721: invalid token ID'))
-  })
-
-  it('throws DeregisterNotConfirmed when confirm=false', async () => {
-    await expect(
-      identity.deregister(config, {
-        address: TEST_ADDRESS,
-        password: TEST_PASSWORD,
-        agentId: '42',
-        confirm: false,
-      }),
-    ).rejects.toThrow(DeregisterNotConfirmed)
-  })
-
-  it('does NOT call wallets.unlock when confirm=false', async () => {
-    try {
-      await identity.deregister(config, {
-        address: TEST_ADDRESS,
-        password: TEST_PASSWORD,
-        agentId: '42',
-        confirm: false,
-      })
-    } catch {
-      // expected
-    }
-
-    expect(wallets.unlock).not.toHaveBeenCalled()
-  })
-
-  it('delegates to SDK when confirm=true and returns formatted result', async () => {
-    const result = await identity.deregister(config, {
-      address: TEST_ADDRESS,
-      password: TEST_PASSWORD,
-      agentId: '42',
-      confirm: true,
-    })
-
-    expect(result.agentId).toBe('42')
-    expect(result.txHash).toBe(TEST_TX_HASH)
-    expect(mockDeregister).toHaveBeenCalledWith(42n)
-  })
-
-  it('throws NotAgentOwner when signer does not own the agent', async () => {
-    mockGetStatus.mockReset()
-    mockGetStatus.mockResolvedValueOnce({
-      owner: '0x' + 'cc'.repeat(20), // different owner
-      tokenUri: 'ipfs://x',
-      wallet: '0x' + '00'.repeat(20),
-      name: 'X', type: 'trading', builderCode: 'b', agentId: 42n, identityTuple: 't',
-    })
-
-    await expect(
-      identity.deregister(config, {
-        address: TEST_ADDRESS,
-        password: TEST_PASSWORD,
-        agentId: '42',
-        confirm: true,
-      }),
-    ).rejects.toThrow(NotAgentOwner)
-    expect(mockDeregister).not.toHaveBeenCalled()
-  })
-
-  it('throws DeregisterNotApplied when post-burn getStatus still resolves', async () => {
-    mockGetStatus.mockReset()
-    mockGetStatus
-      .mockResolvedValueOnce({ owner: SIGNER_ADDRESS, tokenUri: 'ipfs://x', wallet: '0x' + '00'.repeat(20), name: 'X', type: 'trading', builderCode: 'b', agentId: 42n, identityTuple: 't' })
-      .mockResolvedValueOnce({ owner: SIGNER_ADDRESS, tokenUri: 'ipfs://x', wallet: '0x' + '00'.repeat(20), name: 'X', type: 'trading', builderCode: 'b', agentId: 42n, identityTuple: 't' })
-
-    await expect(
-      identity.deregister(config, {
-        address: TEST_ADDRESS,
-        password: TEST_PASSWORD,
-        agentId: '42',
-        confirm: true,
-      }),
-    ).rejects.toThrow(DeregisterNotApplied)
-  })
-
-  it('wraps SDK errors in IdentityTxFailed', async () => {
-    mockDeregister.mockRejectedValue(new Error('revert: token does not exist'))
-
-    await expect(
-      identity.deregister(config, {
-        address: TEST_ADDRESS,
-        password: TEST_PASSWORD,
-        agentId: '99',
-        confirm: true,
-      }),
-    ).rejects.toThrow(IdentityTxFailed)
   })
 })
 

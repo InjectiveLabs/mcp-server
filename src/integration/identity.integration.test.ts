@@ -1,6 +1,6 @@
 /**
- * Identity integration tests -- register, query, update, and deregister an
- * ERC-8004 agent identity on the real Injective EVM testnet.
+ * Identity integration tests -- register, query, and update an ERC-8004
+ * agent identity on the real Injective EVM testnet.
  *
  * Prerequisites:
  *   INJECTIVE_PRIVATE_KEY  -- hex private key (0x-prefixed or bare)
@@ -9,7 +9,7 @@
  * Run:
  *   INJECTIVE_PRIVATE_KEY=0x... npm run test:integration
  *
- * These tests mutate on-chain state (register / update / deregister).
+ * These tests mutate on-chain state (register / update).
  * They run sequentially so each step can use the previous step's result.
  */
 import { describe, it, expect } from 'vitest'
@@ -100,17 +100,6 @@ describe('identity integration', () => {
     expect(found).toBeDefined()
     expect(found!.name).toBe('UpdatedTestBot')
     expect(found!.agentType).toBe('trading')
-  }, 60_000)
-
-  it('deregisters the agent', async () => {
-    const result = await identity.deregister(config, {
-      address: testAddress,
-      password: testPassword,
-      agentId,
-      confirm: true,
-    })
-
-    expect(result.txHash).toMatch(TX_HASH_RE)
   }, 60_000)
 
   it('cleans up test wallet', () => {
