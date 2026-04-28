@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { testConfig } from '../test-utils/index.js'
 import { IdentityNotFound } from '../errors/index.js'
+import { ContractError } from '@injective/agent-sdk'
 
 // ─── Mocks ──────────────────────────────────────────────────────────────────
 
@@ -105,8 +106,10 @@ describe('identityRead.status', () => {
     expect(typeof result.reputation.count).toBe('string')
   })
 
-  it('throws IdentityNotFound on ERC721 error', async () => {
-    mockGetEnrichedAgent.mockRejectedValue(new Error('ERC721: invalid token ID'))
+  it('throws IdentityNotFound when SDK surfaces ERC721NonexistentToken', async () => {
+    mockGetEnrichedAgent.mockRejectedValue(
+      new ContractError('Agent 999 does not exist on the registry.', 'ERC721NonexistentToken'),
+    )
 
     await expect(
       identityRead.status(config, { agentId: '999' }),
@@ -117,20 +120,14 @@ describe('identityRead.status', () => {
     ).rejects.toThrow('Identity not found for agent: 999')
   })
 
-  it('throws IdentityNotFound for nonexistent token error', async () => {
-    mockGetEnrichedAgent.mockRejectedValue(new Error('query for nonexistent token'))
+  it('re-throws ContractError with a different revertReason as-is', async () => {
+    mockGetEnrichedAgent.mockRejectedValue(
+      new ContractError('Wallet already linked', 'WalletAlreadyLinked'),
+    )
 
     await expect(
       identityRead.status(config, { agentId: '888' }),
-    ).rejects.toThrow(IdentityNotFound)
-  })
-
-  it('throws IdentityNotFound for invalid token error', async () => {
-    mockGetEnrichedAgent.mockRejectedValue(new Error('invalid token'))
-
-    await expect(
-      identityRead.status(config, { agentId: '777' }),
-    ).rejects.toThrow(IdentityNotFound)
+    ).rejects.not.toThrow(IdentityNotFound)
   })
 
   it('re-throws non-identity errors as-is', async () => {

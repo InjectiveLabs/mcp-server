@@ -142,13 +142,9 @@ function wrapSdkError(err: unknown, ...passthrough: (new (...a: never[]) => Erro
   throw new IdentityTxFailed(err instanceof Error ? err.message : String(err))
 }
 
-// ERC721 "nonexistent token" detection. SDK 0.2.1+ decodes the revert into
-// ContractError.revertReason; older versions only surfaced the message text,
-// so we keep a substring fallback for safety.
+// ERC721 "nonexistent token" detection via the SDK's typed revertReason.
 export function isAgentNotFoundError(err: unknown): boolean {
-  if (err instanceof ContractError && err.revertReason === 'ERC721NonexistentToken') return true
-  const msg = err instanceof Error ? err.message : String(err)
-  return msg.includes('ERC721') || msg.includes('nonexistent') || msg.includes('invalid token')
+  return err instanceof ContractError && err.revertReason === 'ERC721NonexistentToken'
 }
 
 function walletLinkInfo(
@@ -163,11 +159,10 @@ function walletLinkInfo(
       walletLinkReason: `Wallet ${wallet} does not match signer ${signerAddress} — only self-links supported`,
     }
   }
-  if (walletTxHash) return { walletTxHash }
-  return {
-    walletLinkSkipped: true,
-    walletLinkReason: 'SDK did not emit a setAgentWallet tx — wallet link may already be in place',
-  }
+  // wallet === signer — SDK contract guarantees walletTxHash is set when this
+  // path returns successfully. If undefined slips through, the caller sees
+  // walletTxHash absent, which is the same as any other missing optional field.
+  return walletTxHash ? { walletTxHash } : {}
 }
 
 // ─── Handlers ─────────────────────────────────────────────────────────────

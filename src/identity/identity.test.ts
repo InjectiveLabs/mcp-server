@@ -140,22 +140,6 @@ describe('identity.register', () => {
     expect(result.walletLinkSkipped).toBeUndefined()
   })
 
-  it('wallet === signer but SDK emitted no walletTxHash: walletLinkSkipped with reason', async () => {
-    process.env['PINATA_JWT'] = 'mock-jwt'
-    mockRegister.mockResolvedValue({
-      agentId: 42n,
-      cardUri: 'ipfs://QmTestCard123',
-      txHashes: [TEST_TX_HASH], // no wallet link tx — link may already be in place
-    })
-
-    const params = { ...defaultRegisterParams(), wallet: SIGNER_ADDRESS }
-    const result = await identity.register(config, params)
-
-    expect(result.walletTxHash).toBeUndefined()
-    expect(result.walletLinkSkipped).toBe(true)
-    expect(result.walletLinkReason).toContain('did not emit')
-  })
-
   it('wraps SDK errors in IdentityTxFailed', async () => {
     process.env['PINATA_JWT'] = 'mock-jwt'
     mockRegister.mockRejectedValue(new Error('revert: not authorized'))
