@@ -8,6 +8,7 @@
 import type { Config } from '../config/index.js'
 import type { AgentType, ServiceName, ServiceEntry, ActionSchema } from '@injective/agent-sdk'
 import { AgentClient, PinataStorage } from '@injective/agent-sdk'
+import { ContractError } from '@injective/agent-sdk'
 import { wallets } from '../wallets/index.js'
 import { IdentityTxFailed } from '../errors/index.js'
 
@@ -141,14 +142,20 @@ function wrapSdkError(err: unknown, ...passthrough: (new (...a: never[]) => Erro
   throw new IdentityTxFailed(err instanceof Error ? err.message : String(err))
 }
 
-// ERC721 "nonexistent token" detection — substring match because the SDK
-// surfaces these as plain ContractError without a typed code.
+// ERC721 "nonexistent token" detection. SDK 0.2.1+ decodes the revert into
+// ContractError.revertReason; older versions only surfaced the message text,
+// so we keep a substring fallback for safety.
 export function isAgentNotFoundError(err: unknown): boolean {
+  if (err instanceof ContractError && err.revertReason === 'ERC721NonexistentToken') return true
   const msg = err instanceof Error ? err.message : String(err)
   return msg.includes('ERC721') || msg.includes('nonexistent') || msg.includes('invalid token')
 }
 
-function walletLinkInfo(wallet: string | undefined, signerAddress: string, txHashes: `0x${string}`[]): WalletLinkInfo {
+function walletLinkInfo(
+  wallet: string | undefined,
+  signerAddress: string,
+  walletTxHash: `0x${string}` | undefined,
+): WalletLinkInfo {
   if (!wallet) return {}
   if (wallet.toLowerCase() !== signerAddress.toLowerCase()) {
     return {
@@ -156,10 +163,11 @@ function walletLinkInfo(wallet: string | undefined, signerAddress: string, txHas
       walletLinkReason: `Wallet ${wallet} does not match signer ${signerAddress} — only self-links supported`,
     }
   }
-  if (txHashes.length > 1) {
-    return { walletTxHash: txHashes[1] }
+  if (walletTxHash) return { walletTxHash }
+  return {
+    walletLinkSkipped: true,
+    walletLinkReason: 'SDK did not emit a setAgentWallet tx — wallet link may already be in place',
   }
-  return {}
 }
 
 // ─── Handlers ─────────────────────────────────────────────────────────────
@@ -196,7 +204,7 @@ export const identity = {
         owner: client.address,
         evmAddress: client.address,
         cardUri: r.cardUri,
-        ...walletLinkInfo(params.wallet, client.address, r.txHashes),
+        ...walletLinkInfo(params.wallet, client.address, r.walletTxHash),
       }
     } catch (err) { wrapSdkError(err) }
   },
@@ -248,7 +256,7 @@ export const identity = {
         agentId: params.agentId,
         txHashes: r.txHashes,
         cardUri,
-        ...walletLinkInfo(params.wallet, client.address, r.txHashes),
+        ...walletLinkInfo(params.wallet, client.address, r.walletTxHash),
       }
     } catch (err) { wrapSdkError(err) }
   },

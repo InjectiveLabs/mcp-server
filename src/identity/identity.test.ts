@@ -26,6 +26,14 @@ vi.mock('@injective/agent-sdk', () => ({
     }
   }),
   PinataStorage: vi.fn(),
+  ContractError: class ContractError extends Error {
+    readonly revertReason: string | undefined
+    constructor(message: string, revertReason?: string) {
+      super(message)
+      this.name = 'ContractError'
+      this.revertReason = revertReason
+    }
+  },
 }))
 
 vi.mock('../wallets/index.js', () => ({
@@ -116,12 +124,13 @@ describe('identity.register', () => {
     expect(result.walletLinkReason).toContain('does not match signer')
   })
 
-  it('wallet === signer with 2 txHashes: result has walletTxHash', async () => {
+  it('wallet === signer: surfaces SDK-supplied walletTxHash', async () => {
     process.env['PINATA_JWT'] = 'mock-jwt'
     mockRegister.mockResolvedValue({
       agentId: 42n,
       cardUri: 'ipfs://QmTestCard123',
       txHashes: [TEST_TX_HASH, TEST_WALLET_TX_HASH],
+      walletTxHash: TEST_WALLET_TX_HASH,
     })
 
     const params = { ...defaultRegisterParams(), wallet: SIGNER_ADDRESS }
@@ -129,6 +138,22 @@ describe('identity.register', () => {
 
     expect(result.walletTxHash).toBe(TEST_WALLET_TX_HASH)
     expect(result.walletLinkSkipped).toBeUndefined()
+  })
+
+  it('wallet === signer but SDK emitted no walletTxHash: walletLinkSkipped with reason', async () => {
+    process.env['PINATA_JWT'] = 'mock-jwt'
+    mockRegister.mockResolvedValue({
+      agentId: 42n,
+      cardUri: 'ipfs://QmTestCard123',
+      txHashes: [TEST_TX_HASH], // no wallet link tx — link may already be in place
+    })
+
+    const params = { ...defaultRegisterParams(), wallet: SIGNER_ADDRESS }
+    const result = await identity.register(config, params)
+
+    expect(result.walletTxHash).toBeUndefined()
+    expect(result.walletLinkSkipped).toBe(true)
+    expect(result.walletLinkReason).toContain('did not emit')
   })
 
   it('wraps SDK errors in IdentityTxFailed', async () => {
@@ -220,9 +245,10 @@ describe('identity.update', () => {
     expect(result.cardUri).toBe('https://example.com/card.json') // uri supplied directly, no RPC needed
   })
 
-  it('wallet === signer with 2 txHashes: result has walletTxHash', async () => {
+  it('wallet === signer: surfaces SDK-supplied walletTxHash', async () => {
     mockUpdate.mockResolvedValue({
       txHashes: [TEST_TX_HASH, TEST_WALLET_TX_HASH],
+      walletTxHash: TEST_WALLET_TX_HASH,
     })
 
     const result = await identity.update(config, {

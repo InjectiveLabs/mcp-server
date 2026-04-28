@@ -9,8 +9,8 @@ importers:
   .:
     dependencies:
       '@injective/agent-sdk':
-        specifier: github:InjectiveLabs/injective-agent-sdk#07a9bf95f36bedceb6f5c542f508ef56cb8cc3fa&path:/packages/sdk
-        version: https://codeload.github.com/InjectiveLabs/injective-agent-sdk/tar.gz/07a9bf95f36bedceb6f5c542f508ef56cb8cc3fa#path:/packages/sdk(viem@2.48.4(typescript@5.9.3)(zod@3.25.76))
+        specifier: github:InjectiveLabs/injective-agent-sdk#381a27087a1c850d00003476979fafe9e9a2f2f8&path:/packages/sdk
+        version: https://codeload.github.com/InjectiveLabs/injective-agent-sdk/tar.gz/381a27087a1c850d00003476979fafe9e9a2f2f8#path:/packages/sdk(viem@2.48.4(typescript@5.9.3)(zod@3.25.76))
       '@injectivelabs/networks':
         specifier: ^1.14.27
         version: 1.18.24
@@ -229,9 +229,9 @@ packages:
     peerDependencies:
       hono: ^4
 
-  '@injective/agent-sdk@https://codeload.github.com/InjectiveLabs/injective-agent-sdk/tar.gz/07a9bf95f36bedceb6f5c542f508ef56cb8cc3fa#path:/packages/sdk':
-    resolution: {path: /packages/sdk, tarball: https://codeload.github.com/InjectiveLabs/injective-agent-sdk/tar.gz/07a9bf95f36bedceb6f5c542f508ef56cb8cc3fa}
-    version: 0.2.0
+  '@injective/agent-sdk@https://codeload.github.com/InjectiveLabs/injective-agent-sdk/tar.gz/381a27087a1c850d00003476979fafe9e9a2f2f8#path:/packages/sdk':
+    resolution: {path: /packages/sdk, tarball: https://codeload.github.com/InjectiveLabs/injective-agent-sdk/tar.gz/381a27087a1c850d00003476979fafe9e9a2f2f8}
+    version: 0.2.1
     engines: {node: '>=18'}
     peerDependencies:
       viem: ~2.47.6
@@ -1462,7 +1462,7 @@ snapshots:
     dependencies:
       hono: 4.12.15
 
-  '@injective/agent-sdk@https://codeload.github.com/InjectiveLabs/injective-agent-sdk/tar.gz/07a9bf95f36bedceb6f5c542f508ef56cb8cc3fa#path:/packages/sdk(viem@2.48.4(typescript@5.9.3)(zod@3.25.76))':
+  '@injective/agent-sdk@https://codeload.github.com/InjectiveLabs/injective-agent-sdk/tar.gz/381a27087a1c850d00003476979fafe9e9a2f2f8#path:/packages/sdk(viem@2.48.4(typescript@5.9.3)(zod@3.25.76))':
     dependencies:
       bech32: 2.0.0
       viem: 2.48.4(typescript@5.9.3)(zod@3.25.76)

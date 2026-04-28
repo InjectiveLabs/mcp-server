@@ -19,6 +19,15 @@ vi.mock('@injective/agent-sdk', () => ({
     getFeedbackEntries: mockGetFeedbackEntries,
     getClients: vi.fn().mockResolvedValue([]),
   })),
+  // Re-exported for `isAgentNotFoundError` (transitively imported via identity/index.js).
+  ContractError: class ContractError extends Error {
+    readonly revertReason: string | undefined
+    constructor(message: string, revertReason?: string) {
+      super(message)
+      this.name = 'ContractError'
+      this.revertReason = revertReason
+    }
+  },
 }))
 
 vi.mock('../evm/index.js', () => ({

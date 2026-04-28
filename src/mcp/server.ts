@@ -980,10 +980,11 @@ server.tool(
 
 server.tool(
   'agent_list',
-  'Find registered agents on Injective. Filter by owner address or agent type. Returns agent IDs with summary metadata. Read-only, no gas cost.',
+  'Find registered agents on Injective. Filter by owner address or agent type. Returns agent IDs with summary metadata. Read-only, no gas cost. ' +
+  'NOTE: when `type` is set, results are best-effort: the registry has no on-chain index by type, so the SDK over-fetches limit*3 agents and post-filters. If matching agents of that type exist beyond the over-fetch window, both `agents` and `total` will undercount. Filter by `owner` first when possible.',
   {
     owner: agentOwnerFilter.optional().describe('Filter by owner — accepts inj1... or 0x... address.'),
-    type: z.string().optional().describe('Filter by agent type (e.g., "trading", "analytics").'),
+    type: z.string().optional().describe('Filter by agent type (e.g., "trading", "analytics"). See tool description for the over-fetch caveat.'),
     limit: z.number().int().min(1).max(100).optional().describe('Max agents to return (default 20, max 100).'),
   },
   async ({ owner, type, limit }) => {
