@@ -1,5 +1,6 @@
 node_modules/
 dist/
+package-lock.json
 *.js.map
 *.d.ts.map
 .env
@@ -13,3 +14,10 @@ ai_plan.md
 ai_comm.md
 *.swp
 *.swo
+
+# Vitest build cache artifacts
+*.timestamp-*.mjs
+
+# Dev/exploratory scripts and working docs (not part of the published package)
+scripts/
+docs/

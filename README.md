@@ -1,6 +1,6 @@
 # Injective MCP Server
 
-An [MCP (Model Context Protocol)](https://modelcontextprotocol.io/) server that gives AI agents full trading capabilities on [Injective](https://injective.com) — perpetual futures, spot transfers, cross-chain bridging, and raw EVM transactions.
+An [MCP (Model Context Protocol)](https://modelcontextprotocol.io/) server that gives AI agents full trading capabilities on [Injective](https://injective.com) — perpetual futures, spot transfers, cross-chain bridging, raw EVM transactions, and on-chain agent identity (ERC-8004).
 
 Connect it to Claude Desktop or Claude Code and trade with natural language.
 
@@ -56,14 +56,28 @@ Connect it to Claude Desktop or Claude Code and trade with natural language.
 |---|---|
 | `evm_broadcast` | Broadcast a raw EVM transaction on Injective EVM. |
 
+### Identity (ERC-8004)
+| Tool | Description |
+|---|---|
+| `agent_register` | Register a new AI agent identity on the ERC-8004 registry. Costs gas. |
+| `agent_update` | Update agent metadata, token URI, or linked wallet. Costs gas. |
+| `agent_status` | Get full agent details: metadata, wallet, owner, reputation. Read-only. |
+| `agent_list` | Find registered agents with optional owner/type filters. Read-only. |
+| `agent_reputation` | Get aggregated reputation summary (score, count, evaluator addresses). Read-only. |
+| `agent_feedback_list` | List individual feedback entries with values, tags, and revocation status. Read-only. |
+| `agent_give_feedback` | Submit on-chain feedback for an agent. Costs gas. |
+| `agent_revoke_feedback` | Revoke previously submitted feedback. Costs gas. |
+
 ---
 
 ## Setup
 
 ```bash
-npm install
-npm run build
+pnpm install
+pnpm build
 ```
+
+Requires [pnpm](https://pnpm.io/) — the project pins it via `packageManager` and uses `pnpm.onlyBuiltDependencies` to allow the `@injective/agent-sdk` git dep to run its `prepare` script during install.
 
 ### Connect to Claude Desktop
 
@@ -208,3 +222,12 @@ Token metadata (symbol, decimals) is resolved automatically against on-chain reg
 | Testnet | `testnet` |
 
 Testnet faucet: https://testnet.faucet.injective.network/
+
+---
+
+## Environment
+
+| Variable | Required for | Description |
+|---|---|---|
+| `INJECTIVE_NETWORK` | All tools | `mainnet` (default) or `testnet`. |
+| `PINATA_JWT` | `agent_register` (no `uri`), `agent_update` with card-affecting fields | Pinata JWT used to upload Agent Cards to IPFS. Skip if you always pass a pre-built `uri`. Get one at [pinata.cloud](https://pinata.cloud/). |
