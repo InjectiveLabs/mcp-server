@@ -29,6 +29,7 @@ import { authz, TRADING_MSG_TYPES } from '../authz/index.js'
 import { usdc } from '../usdc/index.js'
 import { rfq } from '../rfq/index.js'
 import { frontendGuidanceTopics, guidance } from '../guidance/index.js'
+import { createInjectiveClient } from '@injectivelabs/x402/client'
 
 const injAddress = z.string().regex(INJ_ADDRESS_RE, 'Must be a valid inj1... address (42 chars)')
 const numericString = z.string().regex(/^\d+(\.\d+)?$/, 'Must be a positive numeric string')
@@ -982,6 +983,44 @@ server.tool(
       content: [{
         type: 'text',
         text: JSON.stringify(result, null, 2),
+      }],
+    }
+  },
+)
+
+// ─── x402 Payment Tools ────────────────────────────────────────────────────────
+
+server.tool(
+  'x402_fetch',
+  'Fetch data from an x402-gated API endpoint. Automatically handles 402 Payment Required ' +
+  'responses by signing a USDC payment using the Injective EVM wallet, submitting it to the facilitator, ' +
+  'and retrying the request. IMPORTANT: Real on-chain payment with real funds.',
+  {
+    address: injAddress.describe('The inj1... address of your trading wallet.'),
+    password: z.string().describe('Keystore password to decrypt the private key for signing.'),
+    url: z.string().url().describe('The URL of the x402-gated API endpoint.'),
+  },
+  async ({ address, password, url }) => {
+    const privateKeyHex = wallets.unlock(address, password)
+    const client = createInjectiveClient({ privateKey: privateKeyHex as `0x${string}` })
+    const response = await client.fetch(url)
+    
+    const text = await response.text()
+    let data;
+    try {
+      data = JSON.parse(text)
+    } catch {
+      data = text
+    }
+
+    return {
+      content: [{
+        type: 'text',
+        text: JSON.stringify({
+          status: response.status,
+          url: response.url,
+          data
+        }, null, 2),
       }],
     }
   },
