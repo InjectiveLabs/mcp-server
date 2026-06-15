@@ -5,6 +5,7 @@ dist/
 .env
 .env.*
 .claude/
+CLAUDE.md
 .DS_Store
 *.tgz
 coverage/

@@ -10,6 +10,9 @@ export type { WalletEntry } from './keystore/index.js'
 export { wallets } from './wallets/index.js'
 export type { GenerateResult, ImportResult } from './wallets/index.js'
 
+export { addresses } from './addresses/index.js'
+export type { NormalizedAddress, AddressInputType } from './addresses/index.js'
+
 export { markets } from './markets/index.js'
 export type { PerpMarket } from './markets/index.js'
 

@@ -15,6 +15,7 @@ import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import { z } from 'zod'
 import { createConfig, validateNetwork } from '../config/index.js'
 import { wallets } from '../wallets/index.js'
+import { addresses } from '../addresses/index.js'
 import { markets } from '../markets/index.js'
 import { accounts } from '../accounts/index.js'
 import { trading } from '../trading/index.js'
@@ -40,6 +41,23 @@ const NETWORK = validateNetwork(process.env['INJECTIVE_NETWORK'] ?? 'testnet')
 const config = createConfig(NETWORK)
 
 // ─── Wallet Tools ────────────────────────────────────────────────────────────
+
+server.tool(
+  'address_normalize',
+  'Normalize an Injective wallet address. Accepts either inj1... or 0x... and returns both canonical encodings.',
+  {
+    address: z.string().min(1).describe('An inj1... Injective address or 0x... Ethereum address.'),
+  },
+  async ({ address }) => {
+    const result = addresses.normalize(address)
+    return {
+      content: [{
+        type: 'text',
+        text: JSON.stringify(result, null, 2),
+      }],
+    }
+  },
+)
 
 server.tool(
   'wallet_generate',
