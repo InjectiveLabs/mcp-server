@@ -9,5 +9,5 @@ import Decimal from 'decimal.js'
  * e.g. "1.5" with 18 decimals → "1500000000000000000"
  */
 export function toBaseUnits(humanAmount: Decimal, decimals: number): string {
-  return humanAmount.mul(new Decimal(10).pow(decimals)).toFixed(0)
+  return humanAmount.mul(new Decimal(10).pow(decimals)).toFixed(0, Decimal.ROUND_DOWN)
 }

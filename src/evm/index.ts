@@ -1,5 +1,5 @@
 /**
- * EVM module — generic transaction and encoding helpers for Injective inEVM.
+ * EVM module — generic transaction and encoding helpers for Injective EVM.
  *
  * This module is bridge-agnostic and can be reused by deBridge, LayerZero, or
  * any future EVM contract interactions.

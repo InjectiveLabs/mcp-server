@@ -374,6 +374,11 @@ export interface DeBridgeInboundQuoteParams {
   srcTokenAddress: string
   /** Human-readable amount of source token (e.g. "10.5"). */
   amount: string
+  /**
+   * Decimals of the source ERC20 token. Defaults to 6 (USDC/USDT).
+   * Must be set correctly for non-6-decimal tokens (e.g. 18 for WETH).
+   */
+  srcTokenDecimals?: number
   /** Destination ERC20 token address on Injective EVM. */
   dstTokenAddress: string
   /** Recipient address on Injective (bech32 inj1... or 0x EVM address). */
@@ -463,10 +468,7 @@ export async function getQuoteInbound(
   }
   const recipientEvm = resolveRecipientToEvm(params.recipient)
 
-  // USDC on Arbitrum has 6 decimals; generalise by detecting from the API response.
-  // For the quote we need base units — assume 6 decimals if unknown (USDC/USDT standard).
-  // The estimation response confirms decimals so users can verify.
-  const srcAmountBase = toBaseUnits(amount, 6).toString()
+  const srcAmountBase = toBaseUnits(amount, params.srcTokenDecimals ?? 6).toString()
 
   const url = buildInboundCreateTxUrl({
     srcChainId,
@@ -517,8 +519,7 @@ export async function sendBridgeInbound(
   const srcAuthorityAddress = params.srcAuthorityAddress ?? senderEvmAddress
   const dstAuthorityAddress = params.dstAuthorityAddress ?? recipientEvm
 
-  // USDC/USDT use 6 decimals — read from estimation if available.
-  const srcAmountBase = toBaseUnits(amount, 6).toString()
+  const srcAmountBase = toBaseUnits(amount, params.srcTokenDecimals ?? 6).toString()
 
   // 1. Fetch the full order calldata from deBridge.
   const url = buildInboundCreateTxUrl({

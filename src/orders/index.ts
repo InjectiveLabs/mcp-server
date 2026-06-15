@@ -131,7 +131,7 @@ function parseNonNegativeDecimal(name: string, value: string): Decimal {
 
 function toChainPrice(price: Decimal, tickSize: Decimal): string {
   const chainPrice = price.mul(QUOTE_SCALE)
-  return quantize(chainPrice, tickSize).toFixed(0)
+  return quantize(chainPrice, tickSize).toFixed(0, Decimal.ROUND_DOWN)
 }
 
 function toChainQuantity(quantity: Decimal, tickSize: Decimal): string {
@@ -140,7 +140,7 @@ function toChainQuantity(quantity: Decimal, tickSize: Decimal): string {
 }
 
 function usdtToBase(amount: Decimal): string {
-  return amount.mul(QUOTE_SCALE).toFixed(0)
+  return amount.mul(QUOTE_SCALE).toFixed(0, Decimal.ROUND_DOWN)
 }
 
 function fromChainPrice(raw: string): string {

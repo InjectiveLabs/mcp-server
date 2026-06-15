@@ -73,7 +73,7 @@ Connect it to Claude Desktop or Claude Code and trade with natural language.
 ### EVM
 | Tool | Description |
 |---|---|
-| `evm_broadcast` | Broadcast a raw EVM transaction on Injective inEVM. |
+| `evm_broadcast` | Broadcast a raw EVM transaction on Injective EVM. |
 
 ---
 
@@ -191,7 +191,7 @@ MCP Server  (src/mcp/server.ts)
        ├── orders/       Perpetual limit order lifecycle
        ├── transfers/    Bank transfers and subaccount moves
        ├── bridges/      Peggy + deBridge cross-chain
-       └── evm/          Generic Injective inEVM tx broadcasting
+       └── evm/          Generic Injective EVM tx broadcasting
               │
               ▼
      Injective Chain
