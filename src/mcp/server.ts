@@ -27,6 +27,7 @@ import { evm } from '../evm/index.js'
 import { eip712 } from '../evm/eip712.js'
 import { authz, TRADING_MSG_TYPES } from '../authz/index.js'
 import { usdc } from '../usdc/index.js'
+import { rfq } from '../rfq/index.js'
 
 const injAddress = z.string().regex(/^inj1[a-z0-9]{38}$/, 'Must be a valid inj1... address (42 chars)')
 const numericString = z.string().regex(/^\d+(\.\d+)?$/, 'Must be a positive numeric string')
@@ -318,6 +319,43 @@ server.tool(
       gasLimit,
       gasPrice,
     })
+    return {
+      content: [{
+        type: 'text',
+        text: JSON.stringify(result, null, 2),
+      }],
+    }
+  },
+)
+
+// ─── RFQ Tools ─────────────────────────────────────────────────────────────
+
+server.tool(
+  'rfq_constants',
+  'Return RFQ integration constants for the configured Injective network: contract, gateway, websocket, chain IDs, and quote window.',
+  {},
+  async () => {
+    const result = rfq.constants(config)
+    return {
+      content: [{
+        type: 'text',
+        text: JSON.stringify(result, null, 2),
+      }],
+    }
+  },
+)
+
+server.tool(
+  'rfq_market_readiness',
+  'List active derivative markets and mark which ones match the RFQ quote denom. Read-only: no RFQs or trades are submitted.',
+  {
+    quoteDenom: z.string().optional()
+      .describe('Optional quote denom to check. Defaults to native USDC on the configured network.'),
+    symbol: z.string().optional()
+      .describe('Optional symbol filter, e.g. "BTC".'),
+  },
+  async ({ quoteDenom, symbol }) => {
+    const result = await rfq.marketReadiness(config, { quoteDenom, symbol })
     return {
       content: [{
         type: 'text',

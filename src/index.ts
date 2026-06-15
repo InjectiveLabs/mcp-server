@@ -22,6 +22,9 @@ export type { BankBalance, SubaccountBalance, Position, Balances, DenomMeta, Tok
 export { usdc } from './usdc/index.js'
 export type { NativeUsdcInfo, CctpChain, SupportedCctpChains, CctpAttestationStatusParams, CctpAttestationStatus, CctpMintParams, CctpMintResult } from './usdc/index.js'
 
+export { rfq } from './rfq/index.js'
+export type { RfqConstants, RfqMarketReadinessParams, RfqMarketReadinessItem, RfqMarketReadiness } from './rfq/index.js'
+
 export { trading } from './trading/index.js'
 export type { OpenParams, OpenResult, CloseParams, CloseResult } from './trading/index.js'
 

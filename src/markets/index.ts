@@ -10,6 +10,7 @@ export interface PerpMarket {
   tickSize: string            // human-readable min price increment
   minQuantityTick: string     // min quantity increment
   minNotional: string
+  quoteDenom: string
   initialMarginRatio: string
   maintenanceMarginRatio: string
   takerFeeRate: string
@@ -66,6 +67,11 @@ export const markets = {
         const oBase = typeof raw.oracleBase === 'string' ? raw.oracleBase : extractSymbol(m.ticker)
         const oQuote = typeof raw.oracleQuote === 'string' ? raw.oracleQuote : 'USDT'
         const oType = typeof raw.oracleType === 'string' ? raw.oracleType : 'bandibc'
+        const quoteDenom = typeof raw.quoteDenom === 'string'
+          ? raw.quoteDenom
+          : typeof raw.quote_denom === 'string'
+            ? raw.quote_denom
+            : ''
 
         return {
           symbol: extractSymbol(m.ticker),
@@ -74,6 +80,7 @@ export const markets = {
           tickSize: String(m.minPriceTickSize),
           minQuantityTick: String(m.minQuantityTickSize),
           minNotional: String(m.minNotional),
+          quoteDenom,
           initialMarginRatio: imr,
           maintenanceMarginRatio: mmr,
           takerFeeRate: m.takerFeeRate,

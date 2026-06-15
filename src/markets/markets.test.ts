@@ -39,6 +39,7 @@ describe('markets.list', () => {
     expect(result[0]!.symbol).toBe('BTC')
     expect(result[0]!.marketId).toBe('0x' + 'a'.repeat(64))
     expect(result[0]!.ticker).toBe('BTC/USDT PERP')
+    expect(result[0]!.quoteDenom).toBe('peggy0xdAC17F958D2ee523a2206206994597C13D831ec7')
     expect(result[0]!.maintenanceMarginRatio).toBe('0.05')
     expect(result[0]!.quoteDecimals).toBe(6)
     expect(result[1]!.symbol).toBe('ETH')
