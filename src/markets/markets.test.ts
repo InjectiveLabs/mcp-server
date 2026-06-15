@@ -36,12 +36,34 @@ describe('markets.list', () => {
 
     const result = await markets.list(testConfig(), 0) // ttl=0 to bypass cache
     expect(result).toHaveLength(2)
-    expect(result[0]!.symbol).toBe('BTC')
-    expect(result[0]!.marketId).toBe('0x' + 'a'.repeat(64))
-    expect(result[0]!.ticker).toBe('BTC/USDT PERP')
-    expect(result[0]!.maintenanceMarginRatio).toBe('0.05')
-    expect(result[0]!.quoteDecimals).toBe(6)
-    expect(result[1]!.symbol).toBe('ETH')
+    expect(result[0]).toMatchObject({
+      symbol: 'BTC',
+      marketId: '0x' + 'a'.repeat(64),
+      ticker: 'BTC/USDT PERP',
+      quoteDenom: 'peggy0xdAC17F958D2ee523a2206206994597C13D831ec7',
+      maintenanceMarginRatio: '0.05',
+      quoteDecimals: 6,
+    })
+    expect(result[1]).toMatchObject({ symbol: 'ETH' })
+  })
+
+  it('maps quote denom from snake_case fallback', async () => {
+    const rawMarkets = [
+      mockDerivativeMarketRaw({
+        quoteDenom: undefined,
+        quote_denom: 'erc20:0xa00c59ff5a080d2b954d0c75e46e22a0c371235a',
+      }),
+    ]
+    mockedCreateClient.mockReturnValue({
+      derivativesApi: {
+        fetchMarkets: vi.fn().mockResolvedValue(rawMarkets),
+      },
+    } as any)
+
+    const result = await markets.list(testConfig(), 0)
+    expect(result[0]).toMatchObject({
+      quoteDenom: 'erc20:0xa00c59ff5a080d2b954d0c75e46e22a0c371235a',
+    })
   })
 
   it('filters out markets without initialMarginRatio', async () => {

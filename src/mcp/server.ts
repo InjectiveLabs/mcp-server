@@ -15,6 +15,7 @@ import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import { z } from 'zod'
 import { createConfig, validateNetwork } from '../config/index.js'
 import { wallets } from '../wallets/index.js'
+import { addresses, INJ_ADDRESS_RE } from '../addresses/index.js'
 import { markets } from '../markets/index.js'
 import { accounts } from '../accounts/index.js'
 import { trading } from '../trading/index.js'
@@ -25,9 +26,12 @@ import { debridge } from '../bridges/debridge.js'
 import { evm } from '../evm/index.js'
 import { eip712 } from '../evm/eip712.js'
 import { authz, TRADING_MSG_TYPES } from '../authz/index.js'
+import { usdc } from '../usdc/index.js'
+import { rfq } from '../rfq/index.js'
 
-const injAddress = z.string().regex(/^inj1[a-z0-9]{38}$/, 'Must be a valid inj1... address (42 chars)')
+const injAddress = z.string().regex(INJ_ADDRESS_RE, 'Must be a valid inj1... address (42 chars)')
 const numericString = z.string().regex(/^\d+(\.\d+)?$/, 'Must be a positive numeric string')
+const hexString = z.string().regex(/^0x([0-9a-fA-F]{2})+$/, 'Must be non-empty, even-length 0x-prefixed hex')
 
 const server = new McpServer({
   name: 'injective-agent',
@@ -40,6 +44,23 @@ const NETWORK = validateNetwork(process.env['INJECTIVE_NETWORK'] ?? 'testnet')
 const config = createConfig(NETWORK)
 
 // ─── Wallet Tools ────────────────────────────────────────────────────────────
+
+server.tool(
+  'address_normalize',
+  'Normalize an Injective wallet address. Accepts either inj1... or 0x... and returns both canonical encodings.',
+  {
+    address: z.string().min(1).describe('An inj1... Injective address or 0x... Ethereum address.'),
+  },
+  async ({ address }) => {
+    const result = addresses.normalize(address)
+    return {
+      content: [{
+        type: 'text',
+        text: JSON.stringify(result, null, 2),
+      }],
+    }
+  },
+)
 
 server.tool(
   'wallet_generate',
@@ -220,6 +241,125 @@ server.tool(
           decimals: meta.decimals,
           tokenType: meta.tokenType,
         }, null, 2),
+      }],
+    }
+  },
+)
+
+// ─── Native USDC / CCTP Tools ──────────────────────────────────────────────
+
+server.tool(
+  'usdc_native_info',
+  'Return native Circle USDC metadata for Injective: EVM address, Cosmos denom, decimals, CCTP domain, and CCTP contracts.',
+  {},
+  async () => {
+    const result = usdc.nativeInfo(config)
+    return {
+      content: [{
+        type: 'text',
+        text: JSON.stringify(result, null, 2),
+      }],
+    }
+  },
+)
+
+server.tool(
+  'cctp_supported_chains',
+  'Return common Circle CCTP V2 source-chain configs and aliases for native USDC flows into Injective.',
+  {},
+  async () => {
+    const result = usdc.supportedChains(config)
+    return {
+      content: [{
+        type: 'text',
+        text: JSON.stringify(result, null, 2),
+      }],
+    }
+  },
+)
+
+server.tool(
+  'cctp_attestation_status',
+  'Check Circle Iris attestation status for a CCTP burn transaction. Read-only: no transaction is broadcast.',
+  {
+    sourceDomain: z.number().int().min(0).describe('Circle CCTP source domain, not the EVM chain ID.'),
+    burnTxHash: hexString.describe('Source-chain CCTP burn transaction hash.'),
+  },
+  async ({ sourceDomain, burnTxHash }) => {
+    const result = await usdc.getAttestationStatus({ sourceDomain, burnTxHash })
+    return {
+      content: [{
+        type: 'text',
+        text: JSON.stringify(result, null, 2),
+      }],
+    }
+  },
+)
+
+server.tool(
+  'cctp_mint',
+  'Mint native USDC on Injective EVM from a completed Circle CCTP attestation. ' +
+  'IMPORTANT: Real on-chain transaction. Use after cctp_attestation_status returns mintable=true and confirm with the user first.',
+  {
+    address: injAddress.describe('Sender inj1... address (must be in local keystore). This account pays Injective EVM gas.'),
+    password: z.string().describe('Keystore password to decrypt the private key.'),
+    message: hexString.describe('CCTP message bytes returned by Circle Iris.'),
+    attestation: hexString.describe('CCTP attestation bytes returned by Circle Iris.'),
+    gasLimit: z.union([z.number().int().positive(), numericString]).optional()
+      .describe('Optional gas limit override. Default: 500000.'),
+    gasPrice: numericString.optional()
+      .describe('Optional gas price in wei. Default: current base fee.'),
+  },
+  async ({ address, password, message, attestation, gasLimit, gasPrice }) => {
+    const result = await usdc.mint(config, {
+      address,
+      password,
+      message,
+      attestation,
+      gasLimit,
+      gasPrice,
+    })
+    return {
+      content: [{
+        type: 'text',
+        text: JSON.stringify(result, null, 2),
+      }],
+    }
+  },
+)
+
+// ─── RFQ Tools ─────────────────────────────────────────────────────────────
+
+server.tool(
+  'rfq_constants',
+  'Return RFQ integration constants for the configured Injective network: contract, gateway, websocket, chain IDs, and quote window.',
+  {},
+  async () => {
+    const result = rfq.constants(config)
+    return {
+      content: [{
+        type: 'text',
+        text: JSON.stringify(result, null, 2),
+      }],
+    }
+  },
+)
+
+server.tool(
+  'rfq_market_readiness',
+  'List active derivative markets and mark which ones match the RFQ quote denom. Read-only: no RFQs or trades are submitted.',
+  {
+    quoteDenom: z.string().optional()
+      .describe('Optional quote denom to check. Defaults to native USDC on the configured network.'),
+    symbol: z.string().optional()
+      .describe('Optional symbol filter, e.g. "BTC".'),
+  },
+  async ({ quoteDenom, symbol }) => {
+    const result = await rfq.marketReadiness(config, { quoteDenom, symbol })
+    return {
+      content: [{
+        type: 'text',
+        text: JSON.stringify(result, null, 2),
       }],
     }
   },
