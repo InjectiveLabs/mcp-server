@@ -182,10 +182,19 @@ const CCTP_SOURCE_ALIASES: Record<string, string> = {
   'avalanche-c-chain': 'avalanche',
 }
 
-function validateHex(value: string, field: string): string {
-  if (!/^0x[0-9a-fA-F]*$/.test(value)) {
-    throw new CctpApiError(`${field} must be 0x-prefixed hex`)
+interface HexValidationOptions {
+  exactBytes?: number
+}
+
+function validateHex(value: string, field: string, options: HexValidationOptions = {}): string {
+  if (!/^0x[0-9a-fA-F]+$/.test(value) || value.length % 2 !== 0) {
+    throw new CctpApiError(`${field} must be non-empty, even-length 0x-prefixed hex`)
   }
+
+  if (options.exactBytes !== undefined && value.length !== 2 + options.exactBytes * 2) {
+    throw new CctpApiError(`${field} must be ${options.exactBytes} bytes`)
+  }
+
   return value
 }
 
@@ -288,7 +297,7 @@ export async function getAttestationStatus(
   if (!Number.isInteger(params.sourceDomain) || params.sourceDomain < 0) {
     throw new CctpApiError('sourceDomain must be a non-negative integer')
   }
-  validateHex(params.burnTxHash, 'burnTxHash')
+  validateHex(params.burnTxHash, 'burnTxHash', { exactBytes: 32 })
 
   const url = buildIrisUrl(params)
   const raw = await fetchCircleIris(url)

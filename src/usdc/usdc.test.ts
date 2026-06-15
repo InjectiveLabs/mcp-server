@@ -33,6 +33,7 @@ describe('usdc native info', () => {
 describe('CCTP attestation status', () => {
   afterEach(() => {
     vi.restoreAllMocks()
+    vi.unstubAllGlobals()
   })
 
   it('marks complete Iris messages as mintable', async () => {
@@ -83,7 +84,30 @@ describe('CCTP attestation status', () => {
   it('rejects non-hex burn hashes', async () => {
     await expect(
       getAttestationStatus({ sourceDomain: 3, burnTxHash: 'not-a-hash' })
-    ).rejects.toThrow('burnTxHash must be 0x-prefixed hex')
+    ).rejects.toThrow('burnTxHash must be non-empty, even-length 0x-prefixed hex')
+  })
+
+  it('rejects empty, odd-length, and incorrectly sized burn hashes', async () => {
+    const invalidHashes = [
+      {
+        burnTxHash: '0x',
+        message: 'burnTxHash must be non-empty, even-length 0x-prefixed hex',
+      },
+      {
+        burnTxHash: '0x123',
+        message: 'burnTxHash must be non-empty, even-length 0x-prefixed hex',
+      },
+      {
+        burnTxHash: '0x' + '11'.repeat(31),
+        message: 'burnTxHash must be 32 bytes',
+      },
+    ]
+
+    for (const { burnTxHash, message } of invalidHashes) {
+      await expect(
+        getAttestationStatus({ sourceDomain: 3, burnTxHash })
+      ).rejects.toThrow(message)
+    }
   })
 })
 
@@ -96,7 +120,10 @@ describe('receiveMessage encoding', () => {
 
   it('rejects invalid message bytes', () => {
     expect(() => encodeReceiveMessage('1234', '0xabcd')).toThrow(
-      'message must be 0x-prefixed hex'
+      'message must be non-empty, even-length 0x-prefixed hex'
+    )
+    expect(() => encodeReceiveMessage('0x123', '0xabcd')).toThrow(
+      'message must be non-empty, even-length 0x-prefixed hex'
     )
   })
 })

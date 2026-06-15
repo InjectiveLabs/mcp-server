@@ -155,7 +155,7 @@ For bridging:
 
 For native USDC and CCTP:
 
-```
+```text
 > Show the native Injective USDC denom and CCTP domain
 > Check the CCTP attestation status for burn tx 0x...
 > Mint the completed CCTP transfer on Injective
@@ -163,7 +163,7 @@ For native USDC and CCTP:
 
 For RFQ discovery:
 
-```
+```text
 > Show RFQ constants for mainnet
 > Which active USDC perp markets are RFQ-ready?
 ```

@@ -15,7 +15,7 @@ import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import { z } from 'zod'
 import { createConfig, validateNetwork } from '../config/index.js'
 import { wallets } from '../wallets/index.js'
-import { addresses } from '../addresses/index.js'
+import { addresses, INJ_ADDRESS_RE } from '../addresses/index.js'
 import { markets } from '../markets/index.js'
 import { accounts } from '../accounts/index.js'
 import { trading } from '../trading/index.js'
@@ -29,9 +29,9 @@ import { authz, TRADING_MSG_TYPES } from '../authz/index.js'
 import { usdc } from '../usdc/index.js'
 import { rfq } from '../rfq/index.js'
 
-const injAddress = z.string().regex(/^inj1[a-z0-9]{38}$/, 'Must be a valid inj1... address (42 chars)')
+const injAddress = z.string().regex(INJ_ADDRESS_RE, 'Must be a valid inj1... address (42 chars)')
 const numericString = z.string().regex(/^\d+(\.\d+)?$/, 'Must be a positive numeric string')
-const hexString = z.string().regex(/^0x[0-9a-fA-F]*$/, 'Must be a 0x-prefixed hex string')
+const hexString = z.string().regex(/^0x([0-9a-fA-F]{2})+$/, 'Must be non-empty, even-length 0x-prefixed hex')
 
 const server = new McpServer({
   name: 'injective-agent',

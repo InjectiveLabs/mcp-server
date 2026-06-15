@@ -10,7 +10,7 @@ export interface NormalizedAddress {
   ethAddress: string
 }
 
-const INJ_ADDRESS_RE = /^inj1[02-9ac-hj-np-z]{38}$/
+export const INJ_ADDRESS_RE = /^inj1[02-9ac-hj-np-z]{38}$/
 
 export function normalizeAddress(input: string): NormalizedAddress {
   const value = input.trim()

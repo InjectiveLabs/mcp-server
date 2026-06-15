@@ -66,6 +66,24 @@ describe('rfq market readiness', () => {
     expect(readiness.markets[0]!.tickerMatchesQuote).toBe(true)
   })
 
+  it('does not use ticker fallback when quote denom is present but mismatched', () => {
+    const readiness = summarizeMarketReadiness(getRfqConstants(mainnetConfig), [
+      mockMarket({
+        symbol: 'SOL',
+        ticker: 'SOL/USDC PERP',
+        quoteDenom: 'peggy0xdAC17F958D2ee523a2206206994597C13D831ec7',
+      }),
+    ], {
+      quoteDenom: nativeUsdcDenom,
+      symbol: '',
+    })
+
+    expect(readiness.counts.eligible).toBe(0)
+    expect(readiness.markets[0]!.quoteDenomMatches).toBe(false)
+    expect(readiness.markets[0]!.tickerMatchesQuote).toBe(false)
+    expect(readiness.markets[0]!.rfqEligible).toBe(false)
+  })
+
   it('filters by symbol when requested', () => {
     const readiness = summarizeMarketReadiness(getRfqConstants(mainnetConfig), [
       mockMarket({ symbol: 'BTC', ticker: 'BTC/USDC PERP', quoteDenom: nativeUsdcDenom }),

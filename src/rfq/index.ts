@@ -109,7 +109,7 @@ export function summarizeMarketReadiness(
     .map((market): RfqMarketReadinessItem => {
       const marketQuoteDenom = normalizeDenom(market.quoteDenom)
       const quoteDenomMatches = !!marketQuoteDenom && marketQuoteDenom === quoteDenom
-      const tickerMatchesQuote = !!quoteSymbol && market.ticker.toUpperCase().includes(`/${quoteSymbol}`)
+      const tickerMatchesQuote = !marketQuoteDenom && !!quoteSymbol && market.ticker.toUpperCase().includes(`/${quoteSymbol}`)
       return {
         symbol: market.symbol,
         ticker: market.ticker,
