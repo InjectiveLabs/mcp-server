@@ -26,9 +26,11 @@ import { debridge } from '../bridges/debridge.js'
 import { evm } from '../evm/index.js'
 import { eip712 } from '../evm/eip712.js'
 import { authz, TRADING_MSG_TYPES } from '../authz/index.js'
+import { usdc } from '../usdc/index.js'
 
 const injAddress = z.string().regex(/^inj1[a-z0-9]{38}$/, 'Must be a valid inj1... address (42 chars)')
 const numericString = z.string().regex(/^\d+(\.\d+)?$/, 'Must be a positive numeric string')
+const hexString = z.string().regex(/^0x[0-9a-fA-F]*$/, 'Must be a 0x-prefixed hex string')
 
 const server = new McpServer({
   name: 'injective-agent',
@@ -238,6 +240,88 @@ server.tool(
           decimals: meta.decimals,
           tokenType: meta.tokenType,
         }, null, 2),
+      }],
+    }
+  },
+)
+
+// ─── Native USDC / CCTP Tools ──────────────────────────────────────────────
+
+server.tool(
+  'usdc_native_info',
+  'Return native Circle USDC metadata for Injective: EVM address, Cosmos denom, decimals, CCTP domain, and CCTP contracts.',
+  {},
+  async () => {
+    const result = usdc.nativeInfo(config)
+    return {
+      content: [{
+        type: 'text',
+        text: JSON.stringify(result, null, 2),
+      }],
+    }
+  },
+)
+
+server.tool(
+  'cctp_supported_chains',
+  'Return common Circle CCTP V2 source-chain configs and aliases for native USDC flows into Injective.',
+  {},
+  async () => {
+    const result = usdc.supportedChains(config)
+    return {
+      content: [{
+        type: 'text',
+        text: JSON.stringify(result, null, 2),
+      }],
+    }
+  },
+)
+
+server.tool(
+  'cctp_attestation_status',
+  'Check Circle Iris attestation status for a CCTP burn transaction. Read-only: no transaction is broadcast.',
+  {
+    sourceDomain: z.number().int().min(0).describe('Circle CCTP source domain, not the EVM chain ID.'),
+    burnTxHash: hexString.describe('Source-chain CCTP burn transaction hash.'),
+  },
+  async ({ sourceDomain, burnTxHash }) => {
+    const result = await usdc.getAttestationStatus({ sourceDomain, burnTxHash })
+    return {
+      content: [{
+        type: 'text',
+        text: JSON.stringify(result, null, 2),
+      }],
+    }
+  },
+)
+
+server.tool(
+  'cctp_mint',
+  'Mint native USDC on Injective EVM from a completed Circle CCTP attestation. ' +
+  'IMPORTANT: Real on-chain transaction. Use after cctp_attestation_status returns mintable=true and confirm with the user first.',
+  {
+    address: injAddress.describe('Sender inj1... address (must be in local keystore). This account pays Injective EVM gas.'),
+    password: z.string().describe('Keystore password to decrypt the private key.'),
+    message: hexString.describe('CCTP message bytes returned by Circle Iris.'),
+    attestation: hexString.describe('CCTP attestation bytes returned by Circle Iris.'),
+    gasLimit: z.union([z.number().int().positive(), numericString]).optional()
+      .describe('Optional gas limit override. Default: 500000.'),
+    gasPrice: numericString.optional()
+      .describe('Optional gas price in wei. Default: current base fee.'),
+  },
+  async ({ address, password, message, attestation, gasLimit, gasPrice }) => {
+    const result = await usdc.mint(config, {
+      address,
+      password,
+      message,
+      attestation,
+      gasLimit,
+      gasPrice,
+    })
+    return {
+      content: [{
+        type: 'text',
+        text: JSON.stringify(result, null, 2),
       }],
     }
   },

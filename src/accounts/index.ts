@@ -56,6 +56,8 @@ const KNOWN_DENOMS: Record<string, DenomMeta> = {
   'inj': { symbol: 'INJ', decimals: 18, tokenType: 'native' },
   'peggy0xdAC17F958D2ee523a2206206994597C13D831ec7': { symbol: 'USDT', decimals: 6, tokenType: 'peggy' },
   'peggy0x87aB3B4C8661e07D6372361211B96ed4Dc36B1B5': { symbol: 'USDT', decimals: 6, tokenType: 'peggy' },
+  'erc20:0xa00c59ff5a080d2b954d0c75e46e22a0c371235a': { symbol: 'USDC', decimals: 6, tokenType: 'erc20' },
+  'erc20:0x0c382e685bbeefe5d3d9c29e29e341fee8e84c5d': { symbol: 'USDC', decimals: 6, tokenType: 'erc20' },
 }
 
 /**

@@ -19,6 +19,9 @@ export type { PerpMarket } from './markets/index.js'
 export { accounts } from './accounts/index.js'
 export type { BankBalance, SubaccountBalance, Position, Balances, DenomMeta, TokenType } from './accounts/index.js'
 
+export { usdc } from './usdc/index.js'
+export type { NativeUsdcInfo, CctpChain, SupportedCctpChains, CctpAttestationStatusParams, CctpAttestationStatus, CctpMintParams, CctpMintResult } from './usdc/index.js'
+
 export { trading } from './trading/index.js'
 export type { OpenParams, OpenResult, CloseParams, CloseResult } from './trading/index.js'
 

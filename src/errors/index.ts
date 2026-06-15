@@ -118,6 +118,14 @@ export class DeBridgeApiError extends Error {
   }
 }
 
+export class CctpApiError extends Error {
+  readonly code = 'CCTP_API_ERROR'
+  constructor(reason: string) {
+    super(`CCTP API error: ${reason}`)
+    this.name = 'CctpApiError'
+  }
+}
+
 export class UnsupportedBridgeChain extends Error {
   readonly code = 'UNSUPPORTED_BRIDGE_CHAIN'
   constructor(chain: string | number) {
