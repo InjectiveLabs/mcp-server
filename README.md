@@ -44,6 +44,12 @@ Connect it to Claude Desktop or Claude Code and trade with natural language.
 | `rfq_constants` | Return RFQ contract, gateway, websocket, chain IDs, and default quote collection window for the configured network. |
 | `rfq_market_readiness` | List active derivative markets and mark which ones match the RFQ quote denom. Read-only. |
 
+### Frontend Guidance
+| Tool | Description |
+|---|---|
+| `frontend_guidance_topics` | List read-only frontend guidance topics available from the MCP server. |
+| `frontend_guidance` | Return guidance for Injective browser trading flows, optionally filtered by topic. |
+
 ### Perpetual Trading
 | Tool | Description |
 |---|---|
@@ -168,6 +174,14 @@ For RFQ discovery:
 > Which active USDC perp markets are RFQ-ready?
 ```
 
+For frontend implementation guidance:
+
+```text
+> List Injective frontend guidance topics
+> Show frontend guidance for native USDC balance UX
+> What should I check before shipping an Injective browser wallet signing flow?
+```
+
 ---
 
 ## Architecture
@@ -186,6 +200,7 @@ MCP Server  (src/mcp/server.ts)
        ├── accounts/     Balances and positions
        ├── usdc/         Native USDC metadata and Circle CCTP helpers
        ├── rfq/          RFQ constants and market readiness
+       ├── guidance/     Read-only frontend implementation guidance
        ├── trading/      Perpetual market orders (Cosmos signing)
        ├── evm/eip712    Perpetual market orders (EIP-712 signing)
        ├── orders/       Perpetual limit order lifecycle
