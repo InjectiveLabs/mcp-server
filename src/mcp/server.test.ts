@@ -7,6 +7,7 @@
  */
 import { describe, it, expect } from 'vitest'
 import { z } from 'zod'
+import { frontendGuidanceTopics } from '../guidance/index.js'
 
 // ─── Zod Schema Tests ────────────────────────────────────────────────────────
 // These mirror the schemas defined in server.ts to verify validation behavior.
@@ -14,6 +15,7 @@ import { z } from 'zod'
 const injAddress = z.string().regex(/^inj1[a-z0-9]{38}$/, 'Must be a valid inj1... address (42 chars)')
 const numericString = z.string().regex(/^\d+(\.\d+)?$/, 'Must be a positive numeric string')
 const ethAddress = z.string().regex(/^0x[a-fA-F0-9]{40}$/, 'Must be a valid 0x... Ethereum address (42 chars)')
+const frontendGuidanceTopic = z.enum(frontendGuidanceTopics)
 
 describe('injAddress schema', () => {
   it('accepts valid inj1 address', () => {
@@ -119,6 +121,26 @@ describe('numericString schema', () => {
 
   it('rejects trailing dot', () => {
     expect(numericString.safeParse('5.').success).toBe(false)
+  })
+})
+
+describe('frontend_guidance parameter validation', () => {
+  const schema = z.object({
+    topic: frontendGuidanceTopic.optional(),
+  })
+
+  it('accepts an omitted topic', () => {
+    expect(schema.safeParse({}).success).toBe(true)
+  })
+
+  it('accepts every supported topic', () => {
+    for (const topic of frontendGuidanceTopics) {
+      expect(schema.safeParse({ topic }).success).toBe(true)
+    }
+  })
+
+  it('rejects unknown topics', () => {
+    expect(schema.safeParse({ topic: 'oracle-migration' }).success).toBe(false)
   })
 })
 

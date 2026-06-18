@@ -28,10 +28,12 @@ import { eip712 } from '../evm/eip712.js'
 import { authz, TRADING_MSG_TYPES } from '../authz/index.js'
 import { usdc } from '../usdc/index.js'
 import { rfq } from '../rfq/index.js'
+import { frontendGuidanceTopics, guidance } from '../guidance/index.js'
 
 const injAddress = z.string().regex(INJ_ADDRESS_RE, 'Must be a valid inj1... address (42 chars)')
 const numericString = z.string().regex(/^\d+(\.\d+)?$/, 'Must be a positive numeric string')
 const hexString = z.string().regex(/^0x([0-9a-fA-F]{2})+$/, 'Must be non-empty, even-length 0x-prefixed hex')
+const frontendGuidanceTopic = z.enum(frontendGuidanceTopics)
 
 const server = new McpServer({
   name: 'injective-agent',
@@ -356,6 +358,42 @@ server.tool(
   },
   async ({ quoteDenom, symbol }) => {
     const result = await rfq.marketReadiness(config, { quoteDenom, symbol })
+    return {
+      content: [{
+        type: 'text',
+        text: JSON.stringify(result, null, 2),
+      }],
+    }
+  },
+)
+
+// ─── Frontend Guidance Tools ────────────────────────────────────────────────
+
+server.tool(
+  'frontend_guidance_topics',
+  'List read-only Injective frontend guidance topics available from this MCP server.',
+  {},
+  async () => {
+    const result = guidance.listFrontendGuidanceTopics()
+    return {
+      content: [{
+        type: 'text',
+        text: JSON.stringify(result, null, 2),
+      }],
+    }
+  },
+)
+
+server.tool(
+  'frontend_guidance',
+  'Return read-only guidance for building Injective browser trading flows. ' +
+  'Use this before changing wallet signing, RFQ taker UX, native USDC balance UX, AuthZ/autosign readiness, or trade submission UI.',
+  {
+    topic: frontendGuidanceTopic.optional()
+      .describe('Optional topic filter. Omit to return all frontend guidance topics.'),
+  },
+  async ({ topic }) => {
+    const result = guidance.getFrontendGuidance(topic)
     return {
       content: [{
         type: 'text',

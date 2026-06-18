@@ -25,6 +25,9 @@ export type { NativeUsdcInfo, CctpChain, SupportedCctpChains, CctpAttestationSta
 export { rfq } from './rfq/index.js'
 export type { RfqConstants, RfqMarketReadinessParams, RfqMarketReadinessItem, RfqMarketReadiness } from './rfq/index.js'
 
+export { guidance } from './guidance/index.js'
+export type { FrontendGuidanceTopic, FrontendGuidanceSection } from './guidance/index.js'
+
 export { trading } from './trading/index.js'
 export type { OpenParams, OpenResult, CloseParams, CloseResult } from './trading/index.js'
 
