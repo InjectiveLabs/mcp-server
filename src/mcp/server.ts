@@ -997,7 +997,7 @@ server.tool(
   'and retrying the request. IMPORTANT: Real on-chain payment with real funds.',
   {
     address: injAddress.describe('The inj1... address of your trading wallet.'),
-    password: z.string().describe('Keystore password to decrypt the private key for signing.'),
+    password: z.string().describe('Keystore password to decrypt the private key for signing. SECURITY: Never log, store, or echo this. Use secret inputs only.'),
     url: z.string().url().describe('The URL of the x402-gated API endpoint.'),
   },
   async ({ address, password, url }) => {
