@@ -29,7 +29,7 @@ import { authz, TRADING_MSG_TYPES } from '../authz/index.js'
 import { usdc } from '../usdc/index.js'
 import { rfq } from '../rfq/index.js'
 import { frontendGuidanceTopics, guidance } from '../guidance/index.js'
-import { createInjectiveClient } from '@injectivelabs/x402/client'
+import { createInjectiveClient as x402CreateClient, parsePaymentRequired } from '@injectivelabs/x402/client'
 
 const injAddress = z.string().regex(INJ_ADDRESS_RE, 'Must be a valid inj1... address (42 chars)')
 const numericString = z.string().regex(/^\d+(\.\d+)?$/, 'Must be a positive numeric string')
@@ -999,11 +999,33 @@ server.tool(
     address: injAddress.describe('The inj1... address of your trading wallet.'),
     password: z.string().describe('Keystore password to decrypt the private key for signing. SECURITY: Never log, store, or echo this. Use secret inputs only.'),
     url: z.string().url().describe('The URL of the x402-gated API endpoint.'),
+    maxAmount: z.number().optional().describe('A safety limit on the maximum USDC amount you are willing to pay for this request.'),
   },
-  async ({ address, password, url }) => {
+  async ({ address, password, url, maxAmount }) => {
     const privateKeyHex = wallets.unlock(address, password)
-    const client = createInjectiveClient({ privateKey: privateKeyHex as `0x${string}` })
-    const response = await client.fetch(url)
+    
+    if (maxAmount !== undefined) {
+      const preflight = await fetch(url)
+      if (preflight.status === 402) {
+        const authHeader = preflight.headers.get('WWW-Authenticate') || preflight.headers.get('402-Payment-Required')
+        if (authHeader) {
+          const required = parsePaymentRequired(authHeader)
+          if (required.accepts && required.accepts.length > 0) {
+            // USDC is 6 decimals. We compare decimal representations or convert string to number.
+            // Amount is usually a string representing the smallest unit (e.g. 500000 = 0.5 USDC).
+            const rawAmount = Number(required.accepts[0].amount)
+            const tokenDecimals = 6 // USDC
+            const usdAmount = rawAmount / Math.pow(10, tokenDecimals)
+            if (usdAmount > maxAmount) {
+              throw new Error(`Payment required (${usdAmount} USDC) exceeds your maxAmount safety limit of ${maxAmount} USDC.`)
+            }
+          }
+        }
+      }
+    }
+
+    const x402Client = x402CreateClient({ privateKey: privateKeyHex as `0x${string}` })
+    const response = await x402Client.fetch(url)
     
     const text = await response.text()
     let data;
