@@ -30,6 +30,11 @@ Connect it to Claude Desktop or Claude Code and trade with natural language.
 | `account_positions` | Get open perpetual positions with unrealized P&L. |
 | `token_metadata` | Look up symbol, decimals, and type for any denom. |
 
+### x402 Payments
+| Tool | Description |
+|---|---|
+| `x402_fetch` | Fetch an x402-gated API endpoint, automatically signing and paying the required USDC quote using the Injective EVM wallet if a 402 is returned. |
+
 ### Native USDC and CCTP
 | Tool | Description |
 |---|---|

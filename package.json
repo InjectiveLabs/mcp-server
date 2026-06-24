@@ -22,6 +22,7 @@
     "@injectivelabs/networks": "^1.14.27",
     "@injectivelabs/sdk-ts": "^1.14.27",
     "@injectivelabs/utils": "^1.14.27",
+    "@injectivelabs/x402": "^0.0.1",
     "@modelcontextprotocol/sdk": "^1.0.4",
     "decimal.js": "^10.4.3",
     "zod": "^3.22.0"
