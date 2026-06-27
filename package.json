@@ -16,7 +16,8 @@
     "test:watch": "vitest",
     "test:integration": "vitest run --config vitest.integration.config.ts",
     "mcp": "node dist/mcp/server.js",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "postinstall": "npm run build"
   },
   "dependencies": {
     "@injectivelabs/networks": "^1.14.27",
