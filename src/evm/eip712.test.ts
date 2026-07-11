@@ -75,22 +75,26 @@ vi.mock('@injectivelabs/sdk-ts', async () => {
     createTxRawEIP712: vi.fn().mockReturnValue({ signatures: [] }),
     createWeb3Extension: vi.fn().mockReturnValue({}),
     createTransaction: vi.fn().mockReturnValue({ txRaw: {} }),
-    ChainRestAuthApi: vi.fn().mockImplementation(() => ({
-      fetchAccount: vi.fn().mockResolvedValue({
-        account: {
-          base_account: {
-            account_number: '42',
-            sequence: '7',
-            pub_key: { key: 'AAAA' },
+    ChainRestAuthApi: vi.fn(function ChainRestAuthApi() {
+      return {
+        fetchAccount: vi.fn().mockResolvedValue({
+          account: {
+            base_account: {
+              account_number: '42',
+              sequence: '7',
+              pub_key: { key: 'AAAA' },
+            },
           },
-        },
-      }),
-    })),
-    ChainRestTendermintApi: vi.fn().mockImplementation(() => ({
-      fetchLatestBlock: vi.fn().mockResolvedValue({
-        header: { height: '12345678' },
-      }),
-    })),
+        }),
+      }
+    }),
+    ChainRestTendermintApi: vi.fn(function ChainRestTendermintApi() {
+      return {
+        fetchLatestBlock: vi.fn().mockResolvedValue({
+          header: { height: '12345678' },
+        }),
+      }
+    }),
     Address: {
       fromHex: vi.fn().mockReturnValue({
         getSubaccountId: vi.fn().mockReturnValue('0xsub000'),
@@ -105,12 +109,14 @@ vi.mock('ethers', async () => {
   const actual = await vi.importActual('ethers') as Record<string, unknown>
   return {
     ...actual,
-    Wallet: vi.fn().mockImplementation(() => ({
-      address: '0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266',
-      signTypedData: vi.fn().mockResolvedValue(
-        '0x' + 'ab'.repeat(65)
-      ),
-    })),
+    Wallet: vi.fn(function Wallet() {
+      return {
+        address: '0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266',
+        signTypedData: vi.fn().mockResolvedValue(
+          '0x' + 'ab'.repeat(65)
+        ),
+      }
+    }),
   }
 })
 

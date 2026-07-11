@@ -20,19 +20,45 @@
     "postinstall": "npm run build"
   },
   "dependencies": {
-    "@injectivelabs/networks": "^1.14.27",
-    "@injectivelabs/sdk-ts": "^1.14.27",
-    "@injectivelabs/utils": "^1.14.27",
-    "@modelcontextprotocol/sdk": "^1.0.4",
-    "decimal.js": "^10.4.3",
-    "zod": "^3.22.0"
+    "@injectivelabs/networks": "^1.20.23",
+    "@injectivelabs/sdk-ts": "^1.20.23",
+    "@injectivelabs/utils": "^1.20.23",
+    "@modelcontextprotocol/sdk": "^1.29.0",
+    "decimal.js": "^10.6.0",
+    "zod": "^3.25.76"
   },
   "devDependencies": {
-    "@types/node": "~22.7.0",
-    "typescript": "^5.7.0",
-    "vitest": "^2.1.0"
+    "@types/node": "^24.13.3",
+    "typescript": "^5.9.3",
+    "vitest": "^4.1.10"
+  },
+  "overrides": {
+    "@cosmjs/amino": "0.34.0",
+    "@cosmjs/crypto": "0.34.0",
+    "@cosmjs/encoding": "0.34.0",
+    "@cosmjs/json-rpc": "0.34.0",
+    "@cosmjs/math": "0.34.0",
+    "@cosmjs/proto-signing": "0.34.0",
+    "@cosmjs/socket": "0.34.0",
+    "@cosmjs/stargate": "0.34.0",
+    "@cosmjs/stream": "0.34.0",
+    "@cosmjs/tendermint-rpc": "0.34.0",
+    "@cosmjs/utils": "0.34.0",
+    "@hono/node-server": "1.19.14",
+    "axios": "1.18.1",
+    "bn.js": "5.2.5",
+    "express-rate-limit": "8.5.2",
+    "fast-uri": "3.1.3",
+    "form-data": "4.0.6",
+    "hono": "4.12.29",
+    "path-to-regexp": "8.4.2",
+    "postcss": "8.5.16",
+    "qs": "6.15.3",
+    "rollup": "4.62.2",
+    "vite": "8.1.4",
+    "ws": "8.21.0"
   },
   "engines": {
-    "node": ">=18.0.0"
+    "node": ">=24.0.0"
   }
 }
