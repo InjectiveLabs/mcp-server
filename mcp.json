@@ -1,8 +1,8 @@
 {
   "mcpServers": {
-    "injective-agent": {
+    "injective": {
       "command": "node",
-      "args": ["/path/to/injective-agent/dist/mcp/server.js"],
+      "args": ["/path/to/mcp-server/dist/mcp/server.js"],
       "env": {
         "INJECTIVE_NETWORK": "testnet"
       }

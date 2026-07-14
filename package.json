@@ -1,7 +1,24 @@
 {
-  "name": "@injective-agent/core",
+  "name": "@injectivelabs/mcp-server-core",
   "version": "0.1.0",
   "description": "AI agent library for trading perpetual futures on Injective",
+  "keywords": [
+    "injective",
+    "mcp",
+    "model-context-protocol",
+    "ai-agent",
+    "trading"
+  ],
+  "homepage": "https://github.com/InjectiveLabs/mcp-server#readme",
+  "bugs": {
+    "url": "https://github.com/InjectiveLabs/mcp-server/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/InjectiveLabs/mcp-server.git"
+  },
+  "license": "Apache-2.0",
+  "author": "Injective Labs",
   "type": "module",
   "exports": {
     ".": "./dist/index.js",
@@ -9,6 +26,12 @@
   },
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
+  "files": [
+    "dist/"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
   "scripts": {
     "build": "tsc",
     "dev": "tsc --watch",
@@ -17,7 +40,7 @@
     "test:integration": "vitest run --config vitest.integration.config.ts",
     "mcp": "node dist/mcp/server.js",
     "typecheck": "tsc --noEmit",
-    "postinstall": "npm run build"
+    "prepack": "npm run build"
   },
   "dependencies": {
     "@injectivelabs/networks": "^1.20.23",
