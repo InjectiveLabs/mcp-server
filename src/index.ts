@@ -48,4 +48,7 @@ export type { EvmAccount, BroadcastEvmTxParams, BroadcastEvmTxResult } from './e
 export { eip712 } from './evm/eip712.js'
 export type { Eip712OpenParams, Eip712OpenResult, Eip712CloseParams, Eip712CloseResult } from './evm/eip712.js'
 
+export { cosmwasm } from './cosmwasm/index.js'
+export type { QueryParams, QueryResult, ExecuteParams, ExecuteResult } from './cosmwasm/index.js'
+
 export * from './errors/index.js'
