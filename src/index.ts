@@ -51,4 +51,7 @@ export type { Eip712OpenParams, Eip712OpenResult, Eip712CloseParams, Eip712Close
 export { cosmwasm } from './cosmwasm/index.js'
 export type { QueryParams, QueryResult, ExecuteParams, ExecuteResult } from './cosmwasm/index.js'
 
+export { decodeTxByHash, decodeRawTx } from './tx-decoder/index.js'
+export type { DecodeTxParams, DecodeTxResult, DecodeRawTxParams, DecodeRawTxResult } from './tx-decoder/index.js'
+
 export * from './errors/index.js'
