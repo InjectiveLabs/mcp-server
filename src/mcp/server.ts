@@ -28,7 +28,9 @@ import { eip712 } from '../evm/eip712.js'
 import { authz, TRADING_MSG_TYPES } from '../authz/index.js'
 import { usdc } from '../usdc/index.js'
 import { rfq } from '../rfq/index.js'
+import { cosmwasm } from '../cosmwasm/index.js'
 import { frontendGuidanceTopics, guidance } from '../guidance/index.js'
+import { decodeTxByHash, decodeRawTx } from '../tx-decoder/index.js'
 
 const injAddress = z.string().regex(INJ_ADDRESS_RE, 'Must be a valid inj1... address (42 chars)')
 const numericString = z.string().regex(/^\d+(\.\d+)?$/, 'Must be a positive numeric string')
@@ -978,6 +980,92 @@ server.tool(
     const result = await authz.revoke(config, {
       granterAddress, password, granteeAddress, msgTypes,
     })
+    return {
+      content: [{
+        type: 'text',
+        text: JSON.stringify(result, null, 2),
+      }],
+    }
+  },
+)
+
+// ─── Transaction Decoder Tools ───────────────────────────────────────────────
+
+server.tool(
+  'tx_decode_by_hash',
+  'Decode and interpret a transaction by its hash from the Injective blockchain. ' +
+  'Fetches the transaction from the RPC endpoint, decodes it, and provides a human-readable summary. ' +
+  'Read-only: no transaction is broadcast.',
+  {
+    txHash: z.string().min(1).describe('Transaction hash (64-character hex string, case-insensitive).'),
+    rpcUrl: z.string().optional().describe('Optional RPC URL override. Defaults to configured Injective RPC.'),
+  },
+  async ({ txHash, rpcUrl }) => {
+    const result = await decodeTxByHash(config, { txHash, rpcUrl })
+    return {
+      content: [{
+        type: 'text',
+        text: JSON.stringify(result, null, 2),
+      }],
+    }
+  },
+)
+
+server.tool(
+  'tx_decode_raw',
+  'Decode raw transaction bytes (base64 or hex encoded). ' +
+  'Interprets the transaction structure and extracts messages. ' +
+  'Read-only: no transaction is broadcast.',
+  {
+    txBytes: z.string().min(1).describe('Transaction bytes as base64 or 0x-prefixed hex string.'),
+  },
+  async ({ txBytes }) => {
+    const result = await decodeRawTx({ txBytes })
+    return {
+      content: [{
+        type: 'text',
+        text: JSON.stringify(result, null, 2),
+      }],
+    }
+  },
+)
+
+// ─── CosmWasm Tools ──────────────────────────────────────────────────────────
+
+server.tool(
+  'cosmwasm_query',
+  'Query a CosmWasm smart contract on Injective. Returns the raw contract data.',
+  {
+    contract: injAddress.describe('Contract address (inj1...).'),
+    query: z.record(z.unknown()).describe('JSON query message to send to the contract.'),
+  },
+  async ({ contract, query }) => {
+    const result = await cosmwasm.query(config, { contract, query })
+    return {
+      content: [{
+        type: 'text',
+        text: JSON.stringify(result, null, 2),
+      }],
+    }
+  },
+)
+
+server.tool(
+  'cosmwasm_execute',
+  'Execute a message on a CosmWasm smart contract on Injective. ' +
+  'IMPORTANT: This is a real on-chain transaction with real funds. Confirm parameters first.',
+  {
+    address: injAddress.describe('Sender inj1... address (must be in local keystore).'),
+    password: z.string().describe('Keystore password to decrypt the private key.'),
+    contract: injAddress.describe('Contract address (inj1...).'),
+    msg: z.record(z.unknown()).describe('JSON execute message to send to the contract.'),
+    funds: z.array(z.object({
+      denom: z.string().describe('Token denom, e.g. "inj" or "erc20:0x..."'),
+      amount: z.string().describe('Amount in base units (string).'),
+    })).optional().describe('Native funds to attach to the execute message.'),
+  },
+  async ({ address, password, contract, msg, funds }) => {
+    const result = await cosmwasm.execute(config, { address, password, contract, msg, funds })
     return {
       content: [{
         type: 'text',
